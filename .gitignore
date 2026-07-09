@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+
+# 実行成果物・作業ディレクトリ（撮影生画像/確定ページ/OCR/PDF）
+work/
+config.yaml
+state.json
+
+# OS
+.DS_Store
+
+# fixtures の大容量バイナリ（PoC実画像はローカル配置。Git LFS 運用にするなら別途）
+tests/fixtures/*.png
+tests/fixtures/*.pdf

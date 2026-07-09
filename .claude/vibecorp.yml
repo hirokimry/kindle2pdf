@@ -1,0 +1,43 @@
+# vibecorp.yml — プロジェクト設定
+name: kindle2pdf
+preset: full
+language: ja
+base_branch: main
+protected_files:
+  - MVV.md
+coderabbit:
+  enabled: true
+claude_action:
+  enabled: true
+  skip_paths:
+    - "*.lock"
+    - ".git/**"
+    - "node_modules/**"
+    - "dist/**"
+    - "build/**"
+    - ".cache/**"
+    - "vendor/**"
+branch_protection:
+  required_approvals: 1
+diagnose:
+  enabled: true
+  max_issues_per_run: 7
+  max_issues_per_day: 14
+  max_files_per_issue: 10
+  scope: ""
+  forbidden_targets:
+    - "hooks/*.sh"
+    - "vibecorp.yml"
+    - "MVV.md"
+    - "SECURITY.md"
+    - "POLICY.md"
+    - "skills/**"
+plan:
+  review_agents:
+    - architect
+    - security
+    - testing
+    - performance
+    - dx
+    - cost
+    - legal

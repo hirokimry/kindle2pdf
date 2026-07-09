@@ -1,0 +1,32 @@
+# kindle2pdf 設定サンプル
+# 実運用では config.yaml にコピーして region を calibrate で実測して埋める。
+book_title: "sample-book"
+
+capture:
+  region: [0, 0, 0, 0]            # [x, y, w, h] screencapture -R の値。calibrate で実測
+  spread_mode: true               # 見開き2ページ表示か（true=左右分割する）
+  page_turn_key: "right"          # right(key code 124) / left(123)。右綴じ本は要確認
+  page_turn_method: "osascript"   # osascript | cliclick
+  page_turn_wait: 1.0             # ページ送り後の描画待ち秒
+  stable_wait: 0.3                # 安定確認の追加待ち
+  stable_required: 2              # 連続安定フレーム数（撮影確定）
+  end_detect_repeats: 3           # 同一ハッシュ連続で終了
+  same_threshold: 2               # pHash距離 <=2 を同一とみなす（サムネ除去前提）
+  max_pages: 3000                 # 安全上限
+  prevent_sleep: true             # caffeinate 併用
+
+preprocess:
+  trim: { top: 0.11, bottom: 0.035, left: 0.015, right: 0.015 }  # 比率トリミング
+  split_spread: true              # 中央でL/R分割
+  min_brightness: 20              # これ未満は黒画面異常として除外
+
+ocr:
+  languages: ["ja-JP", "en-US"]
+  recognition_level: "accurate"   # accurate | fast
+  reading_order: "split"          # split(分割前提で単純Yソート) | column(未分割で列認識)
+
+build:
+  image_format: "jpeg"
+  jpeg_quality: 88
+  target_dpi: 300
+  font: "HeiseiMin-W3"            # reportlab内蔵CIDフォント（日本語テキスト層用）

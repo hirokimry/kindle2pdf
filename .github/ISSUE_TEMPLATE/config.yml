@@ -1,0 +1,3 @@
+# blank issue は intent ラベル必須・1 Issue 1 intent 等の運用ガードレールを回避できるため無効化する
+# （Issue #533 Major #6: Issue は ISSUE_TEMPLATE/*.yml 経由で起票させ、テンプレ未使用ルートを塞ぐ）
+blank_issues_enabled: false
