@@ -15,6 +15,7 @@ from pathlib import Path
 
 from PIL import Image, ImageStat
 
+from . import naming
 from .config import Config
 from .state import State
 
@@ -89,7 +90,7 @@ def process_all(
         1. 黒画面異常フレーム除外（min_brightness 未満はスキップ）
         2. 見開き左右分割（split_spread が真なら1枚→2カラム、偽なら単ページ）
         3. 比率トリミングで UI・柱・余白を除去
-        4. pages/page_NNNN.png に単一カラム・UI無しで連番出力
+        4. `naming.page_filename()`（pages/page_{n:06d}.png）に単一カラム・UI無しで連番出力
 
     見開きN枚を分割すると 2N ページになる。全て cfg.preprocess で切替可能。
     処理後の確定ページ数は state.pages_total に記録する。
@@ -145,7 +146,7 @@ def process_all(
             for col in columns:
                 trimmed = trim(col, pcfg.trim or {})
                 page_no += 1
-                out_path = pages_dir / f"page_{page_no:04d}.png"
+                out_path = pages_dir / naming.page_filename(page_no)
                 trimmed.save(out_path)
 
         # raw 1枚を処理し終えた時点で進捗をコミット（レジューム単位）

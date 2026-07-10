@@ -11,7 +11,7 @@ from pathlib import Path
 import imagehash
 import pytest
 
-from kindle2pdf import capture, imaging
+from kindle2pdf import capture, imaging, naming
 from kindle2pdf.config import CaptureConfig, Config, PreprocessConfig
 from kindle2pdf.state import State
 
@@ -142,7 +142,7 @@ def test_sequential_save_no_gaps(monkeypatch, tmp_path):
 
     raw = tmp_path / "raw"
     pngs = sorted(p.name for p in raw.glob("page_*.png"))
-    assert pngs == ["page_0000.png", "page_0001.png", "page_0002.png"]
+    assert pngs == [naming.page_filename(i) for i in range(3)]
     assert state.captured == 3
     assert len(state.hash_history) == 3
     assert not (raw / ".pending.png").exists()
@@ -200,9 +200,9 @@ def test_resume_continues_numbering(monkeypatch, tmp_path):
     capture.run_capture(_make_cfg(), state, tmp_path, tmp_path / "state.json")
 
     raw = tmp_path / "raw"
-    # 連番は 0002 から続く（0000/0001 は再撮影しない）。
-    assert (raw / "page_0002.png").exists()
-    assert not (raw / "page_0000.png").exists()
+    # 連番は 2 番から続く（0/1 は再撮影しない）。
+    assert (raw / naming.page_filename(2)).exists()
+    assert not (raw / naming.page_filename(0)).exists()
     assert state.captured == 3
 
 
