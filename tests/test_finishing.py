@@ -21,6 +21,7 @@ import pytest
 from PIL import Image, ImageDraw
 from pypdf import PdfReader
 
+from kindle2pdf import naming
 from kindle2pdf import ocr as ocr_mod
 from kindle2pdf import pipeline, preprocess
 from kindle2pdf.build_pdf import build
@@ -205,6 +206,41 @@ def test_invalid_jpeg_quality_rejected():
     cfg.build.jpeg_quality = 0
     with pytest.raises(ValueError):
         cfg.validate()
+
+
+def test_page_filename_sorts_lexicographically_across_magnitudes():
+    """ゼロ埋め桁が十分広く、桁数の異なるページ番号でも辞書順=番号順になる。
+
+    `:04d` は 9999 を超えると辞書順が破綻するが、共通ヘルパーの広い桁なら
+    数百〜数万ページでも sorted() がページ番号順と一致する（P8: 安定動作）。
+    """
+    numbers = [0, 1, 9, 10, 99, 100, 999, 1000, 6000, 9999, 10000, 99999]
+    names = [naming.page_filename(n) for n in numbers]
+    # 辞書順ソートした並びが、番号昇順の並びと一致する
+    assert sorted(names) == [naming.page_filename(n) for n in sorted(numbers)]
+
+
+def test_page_filename_uses_shared_width():
+    """capture/preprocess が使う採番桁が一元化されている（横断で一貫）。"""
+    assert naming.page_filename(1) == f"page_{1:0{naming.PAGE_NUM_WIDTH}d}.png"
+    assert naming.PAGE_NUM_WIDTH >= 6  # max_pages 既定3000×見開き分割を大きく上回る余裕
+
+
+def test_preprocess_emits_padded_page_names(tmp_path):
+    """preprocess が共通ヘルパーの桁で pages/ を採番する（辞書順ソート担保）。"""
+    cfg = Config()
+    cfg.book_title = "pad-book"
+    cfg.preprocess.split_spread = False
+    cfg.preprocess.trim = {}
+    cfg.preprocess.min_brightness = 0
+    wd = tmp_path / "wd"
+    (wd / "raw").mkdir(parents=True)
+    _make_text_page(wd / "raw" / "page_000000.png")
+
+    preprocess.process_all(cfg, State(book_title=cfg.book_title), wd)
+
+    produced = [p.name for p in (wd / "pages").glob("page_*.png")]
+    assert produced == [naming.page_filename(1)]
 
 
 def test_png_format_skips_jpeg_quality_check():

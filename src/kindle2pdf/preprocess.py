@@ -15,6 +15,7 @@ from pathlib import Path
 
 from PIL import Image, ImageStat
 
+from . import naming
 from .config import Config
 from .state import State
 
@@ -145,7 +146,7 @@ def process_all(
             for col in columns:
                 trimmed = trim(col, pcfg.trim or {})
                 page_no += 1
-                out_path = pages_dir / f"page_{page_no:04d}.png"
+                out_path = pages_dir / naming.page_filename(page_no)
                 trimmed.save(out_path)
 
         # raw 1枚を処理し終えた時点で進捗をコミット（レジューム単位）

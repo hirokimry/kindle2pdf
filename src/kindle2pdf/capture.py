@@ -14,7 +14,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from . import imaging
+from . import imaging, naming
 from .config import Config, validate_region
 from .state import State
 
@@ -188,7 +188,7 @@ def run_capture(
             else:
                 # 新規ページ: 連番で確定保存し、state を逐次コミットする。
                 seq = state.captured
-                dest = raw_dir / f"page_{seq:04d}.png"
+                dest = raw_dir / naming.page_filename(seq)
                 pending.replace(dest)
                 state.captured = seq + 1
                 state.last_hash = str(h)

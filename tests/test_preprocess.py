@@ -10,7 +10,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from kindle2pdf import preprocess
+from kindle2pdf import naming, preprocess
 from kindle2pdf.config import Config, PreprocessConfig
 from kindle2pdf.state import State
 
@@ -33,7 +33,7 @@ def _setup_raw(tmp_path: Path, book: str, n: int, **make_kw) -> Path:
     raw_dir = tmp_path / "work" / book / "raw"
     raw_dir.mkdir(parents=True)
     for i in range(1, n + 1):
-        _make_spread(raw_dir / f"page_{i:04d}.png", **make_kw)
+        _make_spread(raw_dir / naming.page_filename(i), **make_kw)
     return raw_dir
 
 
@@ -54,8 +54,8 @@ def test_split_spread_doubles_page_count(tmp_path, monkeypatch):
     pages = sorted((tmp_path / "work" / book / "pages").glob("*.png"))
     assert len(pages) == 6  # 見開き3枚 → 6ページ
     assert state.pages_total == 6
-    # 連番が page_0001..page_0006 で欠けなく揃う
-    assert [p.name for p in pages] == [f"page_{i:04d}.png" for i in range(1, 7)]
+    # 連番が page_000001..page_000006 で欠けなく揃う
+    assert [p.name for p in pages] == [naming.page_filename(i) for i in range(1, 7)]
 
 
 def test_split_disabled_keeps_page_count(tmp_path, monkeypatch):
@@ -157,14 +157,14 @@ def test_config_change_clears_stale_pages(tmp_path, monkeypatch):
     state = State(book_title=book)
     preprocess.process_all(_cfg(book, split_spread=True), state)
     assert sorted(p.name for p in pages_dir.glob("*.png")) == [
-        f"page_{i:04d}.png" for i in range(1, 7)
+        naming.page_filename(i) for i in range(1, 7)
     ]
 
     # 2回目: 同じ state を使い split_spread=False に変更 → 3 ページに再生成
     preprocess.process_all(_cfg(book, split_spread=False), state)
     remaining = sorted(p.name for p in pages_dir.glob("*.png"))
-    # 古い page_0004..page_0006 は残留せず、新しい 3 ページのみになる
-    assert remaining == [f"page_{i:04d}.png" for i in range(1, 4)]
+    # 古い page_000004..page_000006 は残留せず、新しい 3 ページのみになる
+    assert remaining == [naming.page_filename(i) for i in range(1, 4)]
     assert state.pages_total == 3
 
 
@@ -181,23 +181,23 @@ def test_resume_skips_already_processed_raw(tmp_path, monkeypatch):
 
     # 中断状態を再現: 先頭2枚を消化済み（4ページ書き出し済み）とする state を用意
     for i in range(1, 5):
-        (pages_dir / f"page_{i:04d}.png").write_bytes(b"stub")
+        (pages_dir / naming.page_filename(i)).write_bytes(b"stub")
     state = State(
         book_title=book,
         preprocess_sig=preprocess._input_signature(pcfg, raw_paths),
         preprocess_raw_done=2,
         pages_total=4,
     )
-    stub_mtime = (pages_dir / "page_0001.png").stat().st_mtime
+    stub_mtime = (pages_dir / naming.page_filename(1)).stat().st_mtime
 
     cfg = _cfg(book, split_spread=True)
     preprocess.process_all(cfg, state)
 
     pages = sorted(p.name for p in pages_dir.glob("*.png"))
-    # 残り1枚（3枚目）が分割され page_0005/page_0006 が追加されて計6ページ
-    assert pages == [f"page_{i:04d}.png" for i in range(1, 7)]
+    # 残り1枚（3枚目）が分割され page_000005/page_000006 が追加されて計6ページ
+    assert pages == [naming.page_filename(i) for i in range(1, 7)]
     assert state.pages_total == 6
     assert state.preprocess_raw_done == 3
-    # 消化済みの page_0001 は再処理されず stub のまま（レジュームでスキップ）
-    assert (pages_dir / "page_0001.png").stat().st_mtime == stub_mtime
-    assert (pages_dir / "page_0001.png").read_bytes() == b"stub"
+    # 消化済みの page_000001 は再処理されず stub のまま（レジュームでスキップ）
+    assert (pages_dir / naming.page_filename(1)).stat().st_mtime == stub_mtime
+    assert (pages_dir / naming.page_filename(1)).read_bytes() == b"stub"
