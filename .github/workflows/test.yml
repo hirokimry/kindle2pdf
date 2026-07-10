@@ -1,11 +1,17 @@
 name: test
 
 on:
+  # push はデフォルトブランチ（main）でのみ走らせる。
+  # feature ブランチでは pull_request だけを走らせ、push/PR の二重発火で
+  # concurrency グループが衝突して必須チェック test に失敗 check-run が
+  # 残る問題（同一コミットに成功/失敗の test が並ぶ）を防ぐ。
   push:
+    branches: [main]
   pull_request:
 
 concurrency:
-  group: test-${{ github.head_ref || github.ref_name }}
+  # event 名も含めて main の push と PR が衝突しないようにする。
+  group: test-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:

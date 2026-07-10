@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 
 from . import imaging
-from .config import Config
+from .config import Config, validate_region
 from .state import State
 
 # 矢印キーの macOS key code（osascript / System Events）。
@@ -26,6 +26,21 @@ _CLICLICK_KEY = {"right": "arrow-right", "left": "arrow-left"}
 _MAX_BLACK_RETRIES = 10
 # 1フレーム確定までに許す総撮影回数（描画が安定しない場合の暴走防止）。
 _MAX_STABLE_ATTEMPTS = 30
+
+
+def run_calibrate(cfg: Config, work_dir: Path) -> tuple[Path, tuple[int, int, int, int]]:
+    """region を 1 枚だけ撮影し、(保存先パス, 正規化済み region) を返す。[P1]
+
+    未設定・不正な region は validate_region が明確な ValueError で弾く。
+    撮影後の画像を開けば UI・柱・余白が入らず本文だけが写るかを目視確認できる。
+    正規化済み region を併せて返すことで、呼び出し側が「実際に撮影に使った値」を
+    表示でき、config の生の値（float 等）との齟齬を防ぐ。
+    """
+    region = validate_region(cfg.capture.region)
+    work_dir.mkdir(parents=True, exist_ok=True)
+    out_path = work_dir / "calibrate.png"
+    grab(list(region), out_path)
+    return out_path, region
 
 
 def activate_kindle() -> None:

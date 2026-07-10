@@ -8,6 +8,29 @@ from pathlib import Path
 import yaml
 
 
+def validate_region(region: list[int]) -> tuple[int, int, int, int]:
+    """capture.region を [x, y, width, height] として検証し正規化する。
+
+    calibrate / capture が撮影前に共通で使う単一の検証点。未設定の
+    [0, 0, 0, 0] や要素数・型の不正、幅高さ 0 以下を明確な ValueError で弾く。
+    x / y はマルチモニタで負値を取り得るため符号は問わない。
+    """
+    if not isinstance(region, (list, tuple)) or len(region) != 4:
+        raise ValueError(
+            "capture.region は [x, y, width, height] の 4 要素で指定してください。"
+        )
+    try:
+        x, y, w, h = (int(v) for v in region)
+    except (TypeError, ValueError):
+        raise ValueError("capture.region の各要素は整数で指定してください。") from None
+    if w <= 0 or h <= 0:
+        raise ValueError(
+            "capture.region の width/height が 0 以下です（未実測の可能性）。"
+            "`kindle2pdf calibrate` で読書領域 [x, y, w, h] を実測してください。"
+        )
+    return x, y, w, h
+
+
 @dataclass
 class CaptureConfig:
     region: list[int] = field(default_factory=lambda: [0, 0, 0, 0])
@@ -70,10 +93,6 @@ class Config:
 
     def validate(self) -> None:
         """最低限の妥当性検証。region 未実測などをここで弾く。"""
-        x, y, w, h = self.capture.region
-        if w <= 0 or h <= 0:
-            raise ValueError(
-                "capture.region が未実測です。`kindle2pdf calibrate` で [x,y,w,h] を確定してください。"
-            )
+        validate_region(self.capture.region)
         if self.capture.page_turn_key not in ("right", "left"):
             raise ValueError("capture.page_turn_key は right / left のいずれか。")
