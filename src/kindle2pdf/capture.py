@@ -42,14 +42,18 @@ def run_calibrate(cfg: Config, work_dir: Path) -> tuple[Path, tuple[int, int, in
     region = validate_region(cfg.capture.region)
     work_dir.mkdir(parents=True, exist_ok=True)
     out_path = work_dir / "calibrate.png"
+    # Kindle を前面化してから撮影する。さもないとコマンド実行元（ターミナル等）が
+    # 前面のまま写ってしまい、読書領域を確認できない。
+    activate_kindle(cfg.capture.app_name)
+    time.sleep(cfg.capture.page_turn_wait)
     grab(list(region), out_path)
     return out_path, region
 
 
-def activate_kindle() -> None:
-    """Kindleを前面化する。"""
+def activate_kindle(app_name: str = "Kindle") -> None:
+    """Kindleを前面化する。app_name は環境により "Amazon Kindle" 等。"""
     subprocess.run(
-        ["osascript", "-e", 'tell application "Kindle" to activate'], check=False
+        ["osascript", "-e", f'tell application "{app_name}" to activate'], check=False
     )
 
 
@@ -70,7 +74,7 @@ def turn_page(cfg: Config) -> None:
             [
                 "osascript",
                 "-e",
-                'tell application "Kindle" to activate',
+                f'tell application "{cfg.capture.app_name}" to activate',
                 "-e",
                 "delay 0.15",
                 "-e",
@@ -163,7 +167,10 @@ def run_capture(
     cap = cfg.capture
     raw_dir = Path(work_dir) / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
-    pending = raw_dir / ".pending.png"
+    # 一時ファイルは raw/ の外（work_dir 直下）かつ非ドットファイルにする。
+    # macOS の screencapture はドットファイル（.pending.png）に書けず、
+    # raw/*.png を glob する preprocess に temp を拾わせないため raw/ の外に置く。
+    pending = Path(work_dir) / "pending.tmp.png"
 
     # レジューム: 既存 state から直前確定フレーム・連続一致数を引き継ぐ。
     prev_hash = imaging.hex_to_hash(state.last_hash) if state.last_hash else None

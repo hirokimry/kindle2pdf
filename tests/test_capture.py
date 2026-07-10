@@ -249,3 +249,57 @@ def test_never_stable_frame_raises(monkeypatch, tmp_path):
         capture.run_capture(
             _make_cfg(stable_required=2), state, tmp_path, tmp_path / "state.json"
         )
+
+
+# --- macOS 実機バグ修正（アプリ名 / pending ドットファイル / calibrate フォーカス） ---
+
+
+def test_turn_page_uses_configured_app_name(monkeypatch):
+    """page_turn の activate は config の app_name を使う（"Amazon Kindle" 等）。"""
+    called = {}
+    monkeypatch.setattr(
+        capture.subprocess, "run", lambda cmd, check: called.setdefault("cmd", cmd)
+    )
+    capture.turn_page(_make_cfg(page_turn_method="osascript", app_name="Amazon Kindle"))
+    assert 'tell application "Amazon Kindle" to activate' in " ".join(called["cmd"])
+
+
+def test_pending_temp_is_not_dotfile_and_outside_raw(monkeypatch, tmp_path):
+    """pending は非ドットファイル（screencapture が書ける）かつ raw/ の外に置く。"""
+    seen = []
+    fake = FakeScreen([(HASH_A, 200), (HASH_A, 200), (HASH_A, 200)])
+
+    def rec_grab(region, out_path):
+        seen.append(Path(out_path))
+        return fake.grab(region, out_path)
+
+    monkeypatch.setattr(capture, "grab", rec_grab)
+    monkeypatch.setattr(capture, "turn_page", fake.turn_page)
+    monkeypatch.setattr(imaging, "mean_brightness", fake.mean_brightness)
+    monkeypatch.setattr(imaging, "phash", fake.phash)
+    capture.run_capture(_make_cfg(), State(), tmp_path, tmp_path / "state.json")
+    assert seen, "grab が呼ばれていない"
+    raw_dir = tmp_path / "raw"
+    for p in seen:
+        assert not p.name.startswith("."), f"pending がドットファイル: {p.name}"
+        assert p.parent != raw_dir, f"pending が raw/ 内にある: {p}"
+
+
+def test_run_calibrate_activates_kindle_before_grab(monkeypatch, tmp_path):
+    """calibrate は撮影前に Kindle を app_name で前面化する（ターミナル誤撮影の防止）。"""
+    order = []
+    monkeypatch.setattr(
+        capture,
+        "activate_kindle",
+        lambda app_name="Kindle": order.append(("activate", app_name)),
+    )
+
+    def rec_grab(region, out_path):
+        order.append(("grab", str(out_path)))
+        Path(out_path).write_bytes(b"x")
+        return str(out_path)
+
+    monkeypatch.setattr(capture, "grab", rec_grab)
+    capture.run_calibrate(_make_cfg(region=[0, 0, 10, 10], app_name="Amazon Kindle"), tmp_path)
+    assert [o[0] for o in order] == ["activate", "grab"]
+    assert order[0][1] == "Amazon Kindle"

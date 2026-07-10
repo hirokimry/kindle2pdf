@@ -4,6 +4,7 @@ book_title: "sample-book"
 
 capture:
   region: [0, 0, 0, 0]            # [x, y, w, h] screencapture -R の値。calibrate で実測
+  app_name: "Kindle"              # Kindle の AppleScript 名。新しめの Mac 版は "Amazon Kindle"
   spread_mode: true               # 見開き2ページ表示か（true=左右分割する）
   page_turn_key: "right"          # right(key code 124) / left(123)。右綴じ本は要確認
   page_turn_method: "osascript"   # osascript | cliclick

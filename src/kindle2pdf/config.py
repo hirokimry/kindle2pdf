@@ -35,6 +35,9 @@ def validate_region(region: list[int]) -> tuple[int, int, int, int]:
 class CaptureConfig:
     region: list[int] = field(default_factory=lambda: [0, 0, 0, 0])
     spread_mode: bool = True
+    # Kindle アプリの AppleScript 名。環境により "Amazon Kindle" 等になる
+    # （`tell application "Kindle"` が -1728 で失敗する環境がある）。
+    app_name: str = "Kindle"
     page_turn_key: str = "right"
     page_turn_method: str = "osascript"
     page_turn_wait: float = 1.0
