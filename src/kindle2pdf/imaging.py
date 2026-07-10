@@ -19,6 +19,11 @@ def phash(path: str | Path) -> imagehash.ImageHash:
         return imagehash.phash(im)
 
 
+def hex_to_hash(hex_str: str) -> imagehash.ImageHash:
+    """16進文字列（state.last_hash 等）から pHash を復元する。"""
+    return imagehash.hex_to_hash(hex_str)
+
+
 def hamming(a: imagehash.ImageHash, b: imagehash.ImageHash) -> int:
     """2つのハッシュのハミング距離。"""
     return a - b

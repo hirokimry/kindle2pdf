@@ -30,7 +30,7 @@ def run(cfg: Config, state_path: str | Path) -> None:
     (wd / "output").mkdir(parents=True, exist_ok=True)
 
     if state.stage == "capture":
-        capture.run_capture(cfg, state, wd)
+        capture.run_capture(cfg, state, wd, state_path)
         state.advance_stage(); state.save(state_path)
     if state.stage == "preprocess":
         preprocess.process_all(cfg, state)
