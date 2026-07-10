@@ -27,6 +27,9 @@ OcrItem = tuple[str, float, list[float]]
 # pages/ から拾う画像拡張子（preprocess の出力形式に追従）
 PAGE_IMAGE_EXTS = (".png", ".jpg", ".jpeg")
 
+# 進捗ログを出す間隔（ページ数）。数百ページでも冗長すぎず追跡できる粒度。
+_PROGRESS_EVERY = 25
+
 
 def ocr_page(path: str | Path, cfg: Config) -> list[OcrItem]:
     """1ページを Vision OCR して (text, confidence, bbox) のリストを返す。"""
@@ -110,6 +113,7 @@ def ocr_all(
         return
 
     pages = _page_images(pages_dir)
+    logger.info("OCR開始: %d ページ", len(pages))
     done = 0
     failed = 0
     for page_path in pages:
@@ -129,6 +133,9 @@ def ocr_all(
         state.ocr_done = done
         if state_path is not None:
             state.save(state_path)
+        # 数百ページでも追跡できるよう一定間隔で進捗を出す。
+        if done % _PROGRESS_EVERY == 0:
+            logger.info("OCR進捗: %d/%d ページ", done, len(pages))
 
     state.ocr_done = done
     if state_path is not None:
