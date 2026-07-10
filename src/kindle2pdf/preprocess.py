@@ -8,7 +8,11 @@
 
 from __future__ import annotations
 
-from PIL import Image
+import hashlib
+import json
+from pathlib import Path
+
+from PIL import Image, ImageStat
 
 from .config import Config
 from .state import State
@@ -24,7 +28,11 @@ def split_spread(img: Image.Image) -> list[Image.Image]:
 
 
 def trim(img: Image.Image, ratios: dict) -> Image.Image:
-    """比率トリミングでUI・柱・余白を除去する。"""
+    """比率トリミングでUI・柱・余白を除去する。
+
+    ratios が空 dict（全比率0）の場合は元画像と同一サイズを返すため、
+    config で trim: {} と指定すれば実質的にトリミングを無効化できる。
+    """
     w, h = img.size
     box = (
         int(w * ratios.get("left", 0.0)),
@@ -35,6 +43,115 @@ def trim(img: Image.Image, ratios: dict) -> Image.Image:
     return img.crop(box)
 
 
-def process_all(cfg: Config, state: State) -> None:
-    """raw/ の全画像を分割・トリミングし pages/ に確定ページとして書き出す。"""
-    raise NotImplementedError("P4: raw/→pages/ のバッチ処理を実装する")
+def _mean_brightness(img: Image.Image) -> float:
+    """開いた Image の平均輝度（グレースケール）。黒画面異常フレーム検知に使う。"""
+    return ImageStat.Stat(img.convert("L")).mean[0]
+
+
+def _input_signature(pcfg, raw_paths: list[Path]) -> str:
+    """preprocess入力（config + raw集合）の署名を返す。
+
+    分割/トリミング/黒画面閾値の設定変更、または raw の増減・並び変化があると
+    署名が変わる。署名が前回と食い違えば pages/ を全再生成する（残留ページ混入を防ぐ）。
+    """
+    payload = json.dumps(
+        {
+            "split_spread": pcfg.split_spread,
+            "trim": pcfg.trim or {},
+            "min_brightness": pcfg.min_brightness,
+            "raw": [p.name for p in raw_paths],
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _clear_pages(pages_dir: Path) -> None:
+    """pages/ の既存 page_*.png を全削除して冪等な再生成を保証する。"""
+    for p in pages_dir.glob("page_*.png"):
+        p.unlink()
+
+
+def process_all(
+    cfg: Config,
+    state: State,
+    work_dir: str | Path | None = None,
+    state_path: str | Path | None = None,
+    force: bool = False,
+) -> None:
+    """raw/ の全画像を分割・トリミングし pages/ に確定ページとして書き出す。
+
+    処理フロー（各 raw 画像ごと）:
+        1. 黒画面異常フレーム除外（min_brightness 未満はスキップ）
+        2. 見開き左右分割（split_spread が真なら1枚→2カラム、偽なら単ページ）
+        3. 比率トリミングで UI・柱・余白を除去
+        4. pages/page_NNNN.png に単一カラム・UI無しで連番出力
+
+    見開きN枚を分割すると 2N ページになる。全て cfg.preprocess で切替可能。
+    処理後の確定ページ数は state.pages_total に記録する。
+
+    冪等クリアとレジュームを両立する（仕様 F-8）:
+        - config か raw集合が前回と変わる／force=True → pages/ を全クリアして全再生成する
+          （設定チューニング後の残留 page_*.png が後段 OCR/PDF に混入するのを防ぐ）。
+        - 署名が一致し途中まで消化済み（中断→再実行）→ 消化済み raw をスキップして続行する。
+    state_path 指定時は raw 1枚ごとに state を永続化し、途中Kill後も続きから再開できる。
+    """
+    pcfg = cfg.preprocess
+    wd = Path(work_dir) if work_dir is not None else Path("work") / cfg.book_title
+    raw_dir = wd / "raw"
+    pages_dir = wd / "pages"
+    pages_dir.mkdir(parents=True, exist_ok=True)
+
+    raw_paths = sorted(raw_dir.glob("*.png"))
+    sig = _input_signature(pcfg, raw_paths)
+
+    # 署名一致かつ消化途中なら中断→再実行とみなしてレジューム。それ以外は全再生成。
+    resume = (
+        not force
+        and state.preprocess_sig == sig
+        and 0 < state.preprocess_raw_done < len(raw_paths)
+    )
+    if not resume:
+        _clear_pages(pages_dir)
+        state.preprocess_raw_done = 0
+        state.pages_total = 0
+    state.preprocess_sig = sig
+
+    start = state.preprocess_raw_done
+    page_no = state.pages_total
+    skipped = 0
+
+    for idx, rp in enumerate(raw_paths):
+        if idx < start:
+            continue  # 既に消化済み → レジュームで飛ばす
+
+        with Image.open(rp) as im:
+            img = im.convert("RGB")
+
+        # 黒画面異常フレームを除外する（config で min_brightness を調整可能）
+        if _mean_brightness(img) < pcfg.min_brightness:
+            skipped += 1
+            print(f"[preprocess] 黒画面異常のためスキップ: {rp.name}")
+        else:
+            # 見開きなら左右分割、単ページ運用なら分割しない
+            columns = split_spread(img) if pcfg.split_spread else [img]
+            for col in columns:
+                trimmed = trim(col, pcfg.trim or {})
+                page_no += 1
+                out_path = pages_dir / f"page_{page_no:04d}.png"
+                trimmed.save(out_path)
+
+        # raw 1枚を処理し終えた時点で進捗をコミット（レジューム単位）
+        state.preprocess_raw_done = idx + 1
+        state.pages_total = page_no
+        if state_path is not None:
+            state.save(state_path)
+
+    state.pages_total = page_no
+    if state_path is not None:
+        state.save(state_path)
+    print(
+        f"[preprocess] 完了: raw {len(raw_paths)} 枚 → pages {page_no} ページ"
+        f"（スキップ {skipped} 枚）"
+    )
