@@ -47,14 +47,18 @@ class FakeScreen:
     grab は tmp ファイルを実際に作る（後段の pending.replace(dest) のため）。
     """
 
-    def __init__(self, frames):
+    def __init__(self, frames, cycle=False):
         self.frames = list(frames)
+        self.cycle = cycle
         self.gi = 0
         self.current = None
         self.turns = 0
 
     def grab(self, region, out_path):
-        idx = min(self.gi, len(self.frames) - 1)
+        if self.cycle:
+            idx = self.gi % len(self.frames)
+        else:
+            idx = min(self.gi, len(self.frames) - 1)
         self.current = self.frames[idx]
         self.gi += 1
         Path(out_path).write_bytes(b"fake-png")
@@ -223,3 +227,25 @@ def test_stable_required_needs_consecutive_match(monkeypatch, tmp_path):
 
     assert state.captured == 1
     assert state.last_hash == HASH_A
+
+
+def test_black_screen_persisting_raises(monkeypatch, tmp_path):
+    # 黒画面が上限を超えて続く撮影領域ズレ・Kindle応答なし相当の異常系。
+    monkeypatch.setattr(capture, "_MAX_BLACK_RETRIES", 3)
+    fake = FakeScreen([(HASH_A, 5)])  # 常に黒画面
+    _install(monkeypatch, fake)
+    state = State()
+    with pytest.raises(RuntimeError, match="黒画面"):
+        capture.run_capture(_make_cfg(), state, tmp_path, tmp_path / "state.json")
+
+
+def test_never_stable_frame_raises(monkeypatch, tmp_path):
+    # フレームが安定しない（毎回別ハッシュ）異常系。
+    monkeypatch.setattr(capture, "_MAX_STABLE_ATTEMPTS", 5)
+    fake = FakeScreen([(HASH_A, 255), (HASH_B, 255)], cycle=True)  # A,B 交互で安定しない
+    _install(monkeypatch, fake)
+    state = State()
+    with pytest.raises(RuntimeError, match="安定"):
+        capture.run_capture(
+            _make_cfg(stable_required=2), state, tmp_path, tmp_path / "state.json"
+        )

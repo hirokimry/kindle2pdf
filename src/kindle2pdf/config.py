@@ -17,6 +17,7 @@ class CaptureConfig:
     page_turn_wait: float = 1.0
     stable_wait: float = 0.3
     stable_required: int = 2
+    stable_threshold: int = 2        # 安定確認用のpHash距離（同一フレーム判定）
     end_detect_repeats: int = 3
     same_threshold: int = 2
     max_pages: int = 3000

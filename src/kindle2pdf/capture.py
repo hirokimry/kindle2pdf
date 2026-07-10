@@ -94,23 +94,25 @@ def _grab_confirmed(cfg: Config, tmp_path: Path) -> imaging.imagehash.ImageHash:
 
     stable_hash: imaging.imagehash.ImageHash | None = None
     stable_count = 0
-    black_retries = 0
-    attempts = 0
+    black_retries = 0  # これまでに撮り直した黒画面の回数
+    attempts = 0       # これまでに撮影した総回数
 
     while True:
-        attempts += 1
-        if attempts > _MAX_STABLE_ATTEMPTS:
+        # 総撮影回数が上限（_MAX_STABLE_ATTEMPTS）に達しても安定しなければ諦める。
+        if attempts >= _MAX_STABLE_ATTEMPTS:
             raise RuntimeError(
                 "撮影フレームが安定しませんでした（page_turn_wait / stable_wait を見直してください）。"
             )
+        attempts += 1
         grab(cap.region, tmp_path)
 
         if imaging.mean_brightness(tmp_path) < min_brightness:
-            black_retries += 1
-            if black_retries > _MAX_BLACK_RETRIES:
+            # 黒画面のリトライ回数が上限（_MAX_BLACK_RETRIES）に達したら諦める。
+            if black_retries >= _MAX_BLACK_RETRIES:
                 raise RuntimeError(
                     "黒画面が継続しました（Kindle表示・撮影領域 region を確認してください）。"
                 )
+            black_retries += 1
             # 黒画面は安定判定をリセットして撮り直す。
             stable_hash = None
             stable_count = 0
@@ -118,7 +120,8 @@ def _grab_confirmed(cfg: Config, tmp_path: Path) -> imaging.imagehash.ImageHash:
             continue
 
         h = imaging.phash(tmp_path)
-        if stable_hash is not None and imaging.is_same(h, stable_hash, cap.same_threshold):
+        # 安定確認は専用の stable_threshold を使う（重複判定用 same_threshold とは別較正）。
+        if stable_hash is not None and imaging.is_same(h, stable_hash, cap.stable_threshold):
             stable_count += 1
         else:
             stable_hash = h
