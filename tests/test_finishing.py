@@ -222,7 +222,9 @@ def test_page_filename_sorts_lexicographically_across_magnitudes():
 
 def test_page_filename_uses_shared_width():
     """capture/preprocess が使う採番桁が一元化されている（横断で一貫）。"""
-    assert naming.page_filename(1) == f"page_{1:0{naming.PAGE_NUM_WIDTH}d}.png"
+    # 実装と同じフォーマット式で再計算せず、期待値をリテラルで固定する（実装バグを検出できるように）
+    assert naming.page_filename(1) == "page_000001.png"
+    assert naming.page_filename(42) == "page_000042.png"
     assert naming.PAGE_NUM_WIDTH >= 6  # max_pages 既定3000×見開き分割を大きく上回る余裕
 
 

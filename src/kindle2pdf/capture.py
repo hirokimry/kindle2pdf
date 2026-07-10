@@ -155,7 +155,7 @@ def run_capture(
 ) -> None:
     """送り→待機→撮影→安定確認→pHash→終了判定 のループ（仕様書 5.2）。
 
-    - 新規ページのみ `raw/page_{n:04d}.png` に欠け・重複なく連番保存する。
+    - 新規ページのみ `naming.page_filename()`（`raw/page_{n:06d}.png`）に欠け・重複なく連番保存する。
     - 直前確定フレームと `same_threshold` 以内で一致したら duplicate とみなし、
       `end_detect_repeats` 連続で最終ページと判定して停止する（duplicate は保存しない）。
     - 1反復ごとに state を `state_path` へ逐次コミットする（レジューム対応）。
