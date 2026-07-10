@@ -64,7 +64,7 @@ def capture(config: str, state_path: str) -> None:
     cfg = _load(config)
     cfg.validate()
     st = State.load(state_path)
-    capture_mod.run_capture(cfg, st, work_dir(cfg))
+    capture_mod.run_capture(cfg, st, work_dir(cfg), state_path)
 
 
 if __name__ == "__main__":
