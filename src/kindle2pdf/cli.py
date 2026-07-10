@@ -32,11 +32,13 @@ def calibrate(config: str) -> None:
 
     cfg = _load(config)
     try:
-        out_path = capture_mod.run_calibrate(cfg, work_dir(cfg))
+        out_path, region = capture_mod.run_calibrate(cfg, work_dir(cfg))
     except ValueError as e:
         # region 未設定・不正は利用者に明確なエラーとして返す（click が exit 1）。
         raise click.ClickException(str(e)) from e
-    click.echo(f"✅ region {cfg.capture.region} を 1 枚撮影しました。")
+    x, y, w, h = region
+    # 生の config 値ではなく実際に撮影に使った正規化済み region を表示する。
+    click.echo(f"✅ region [{x}, {y}, {w}, {h}] を 1 枚撮影しました。")
     click.echo(f"📄 保存先: {out_path}")
     click.echo("👀 画像を開き、UI・柱・余白が入らず本文だけが写っているか確認してください。")
 

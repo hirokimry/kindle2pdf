@@ -16,17 +16,19 @@ from .config import Config, validate_region
 from .state import State
 
 
-def run_calibrate(cfg: Config, work_dir: Path) -> Path:
-    """region を 1 枚だけ撮影し、保存先パスを返す（枠の目視確認用）。[P1]
+def run_calibrate(cfg: Config, work_dir: Path) -> tuple[Path, tuple[int, int, int, int]]:
+    """region を 1 枚だけ撮影し、(保存先パス, 正規化済み region) を返す。[P1]
 
     未設定・不正な region は validate_region が明確な ValueError で弾く。
     撮影後の画像を開けば UI・柱・余白が入らず本文だけが写るかを目視確認できる。
+    正規化済み region を併せて返すことで、呼び出し側が「実際に撮影に使った値」を
+    表示でき、config の生の値（float 等）との齟齬を防ぐ。
     """
-    x, y, w, h = validate_region(cfg.capture.region)
+    region = validate_region(cfg.capture.region)
     work_dir.mkdir(parents=True, exist_ok=True)
     out_path = work_dir / "calibrate.png"
-    grab([x, y, w, h], out_path)
-    return out_path
+    grab(list(region), out_path)
+    return out_path, region
 
 
 def activate_kindle() -> None:

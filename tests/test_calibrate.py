@@ -57,11 +57,28 @@ def test_run_calibrate_saves_and_returns_path(tmp_path, monkeypatch):
 
     monkeypatch.setattr(capture_mod, "grab", fake_grab)
 
-    out = capture_mod.run_calibrate(_cfg([5, 6, 700, 800]), tmp_path / "work")
+    out, region = capture_mod.run_calibrate(_cfg([5, 6, 700, 800]), tmp_path / "work")
 
     assert out == tmp_path / "work" / "calibrate.png"
     assert out.exists()
+    assert region == (5, 6, 700, 800)
     assert captured["region"] == [5, 6, 700, 800]
+
+
+def test_run_calibrate_returns_normalized_region(tmp_path, monkeypatch):
+    # config の生の float 値ではなく int 正規化後の region を返す。
+    captured = {}
+    monkeypatch.setattr(
+        capture_mod,
+        "grab",
+        lambda region, out_path: captured.update(region=region)
+        or Path(out_path).write_bytes(b"x"),
+    )
+
+    _out, region = capture_mod.run_calibrate(_cfg([10.5, 20, 300, 400]), tmp_path / "w")
+
+    assert region == (10, 20, 300, 400)
+    assert captured["region"] == [10, 20, 300, 400]
 
 
 def test_run_calibrate_rejects_unmeasured_region(tmp_path, monkeypatch):
@@ -76,8 +93,9 @@ def test_run_calibrate_rejects_unmeasured_region(tmp_path, monkeypatch):
 
 def test_cli_calibrate_success(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    # 生の値が float でも表示は int 正規化後の region になることを確認する。
     (tmp_path / "config.yaml").write_text(
-        "book_title: t\ncapture:\n  region: [1, 2, 300, 400]\n", encoding="utf-8"
+        "book_title: t\ncapture:\n  region: [1.9, 2, 300, 400]\n", encoding="utf-8"
     )
     monkeypatch.setattr(
         capture_mod, "grab", lambda region, out_path: Path(out_path).write_bytes(b"x")
@@ -87,6 +105,7 @@ def test_cli_calibrate_success(tmp_path, monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert "保存先" in result.output
+    assert "[1, 2, 300, 400]" in result.output
     assert (tmp_path / "work" / "t" / "calibrate.png").exists()
 
 
