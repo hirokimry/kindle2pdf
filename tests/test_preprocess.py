@@ -144,3 +144,60 @@ def test_empty_raw_dir_yields_zero_pages(tmp_path, monkeypatch):
     pages = list((tmp_path / "work" / book / "pages").glob("*.png"))
     assert pages == []
     assert state.pages_total == 0
+
+
+def test_config_change_clears_stale_pages(tmp_path, monkeypatch):
+    """config 変更後の再実行で古い page_*.png が残留しない（冪等クリア）。"""
+    monkeypatch.chdir(tmp_path)
+    book = "restale"
+    _setup_raw(tmp_path, book, n=3)
+    pages_dir = tmp_path / "work" / book / "pages"
+
+    # 1回目: 見開き分割ありで 6 ページ生成
+    state = State(book_title=book)
+    preprocess.process_all(_cfg(book, split_spread=True), state)
+    assert sorted(p.name for p in pages_dir.glob("*.png")) == [
+        f"page_{i:04d}.png" for i in range(1, 7)
+    ]
+
+    # 2回目: 同じ state を使い split_spread=False に変更 → 3 ページに再生成
+    preprocess.process_all(_cfg(book, split_spread=False), state)
+    remaining = sorted(p.name for p in pages_dir.glob("*.png"))
+    # 古い page_0004..page_0006 は残留せず、新しい 3 ページのみになる
+    assert remaining == [f"page_{i:04d}.png" for i in range(1, 4)]
+    assert state.pages_total == 3
+
+
+def test_resume_skips_already_processed_raw(tmp_path, monkeypatch):
+    """途中まで消化済みの state から再開すると残りの raw だけを処理する（F-8 レジューム）。"""
+    monkeypatch.chdir(tmp_path)
+    book = "resume"
+    raw_dir = _setup_raw(tmp_path, book, n=3)
+    pages_dir = tmp_path / "work" / book / "pages"
+    pages_dir.mkdir(parents=True, exist_ok=True)
+
+    pcfg = PreprocessConfig(split_spread=True)
+    raw_paths = sorted(raw_dir.glob("*.png"))
+
+    # 中断状態を再現: 先頭2枚を消化済み（4ページ書き出し済み）とする state を用意
+    for i in range(1, 5):
+        (pages_dir / f"page_{i:04d}.png").write_bytes(b"stub")
+    state = State(
+        book_title=book,
+        preprocess_sig=preprocess._input_signature(pcfg, raw_paths),
+        preprocess_raw_done=2,
+        pages_total=4,
+    )
+    stub_mtime = (pages_dir / "page_0001.png").stat().st_mtime
+
+    cfg = _cfg(book, split_spread=True)
+    preprocess.process_all(cfg, state)
+
+    pages = sorted(p.name for p in pages_dir.glob("*.png"))
+    # 残り1枚（3枚目）が分割され page_0005/page_0006 が追加されて計6ページ
+    assert pages == [f"page_{i:04d}.png" for i in range(1, 7)]
+    assert state.pages_total == 6
+    assert state.preprocess_raw_done == 3
+    # 消化済みの page_0001 は再処理されず stub のまま（レジュームでスキップ）
+    assert (pages_dir / "page_0001.png").stat().st_mtime == stub_mtime
+    assert (pages_dir / "page_0001.png").read_bytes() == b"stub"

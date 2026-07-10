@@ -21,6 +21,8 @@ class State:
     last_hash: str = ""          # 直近確定フレームのpHash
     repeat_count: int = 0        # 同一ハッシュ連続回数
     pages_total: int = 0         # 分割後の確定ページ数（preprocess後に確定）
+    preprocess_sig: str = ""     # preprocess入力の署名（config+raw集合。変化検知で全再生成）
+    preprocess_raw_done: int = 0 # preprocessで消化済みのraw枚数（レジューム再開位置）
     ocr_done: int = 0            # OCR完了ページ数
     updated_at: str = ""         # 実行後にスタンプ（呼び出し側で設定）
     hash_history: list[str] = field(default_factory=list)
