@@ -27,7 +27,18 @@ def _load(config: str) -> Config:
 @click.option("--config", default="config.yaml", show_default=True)
 def calibrate(config: str) -> None:
     """撮影領域 region を実測するための補助（1枚撮って枠を確認）。[P1]"""
-    raise NotImplementedError("P1: calibrate を実装する")
+    from . import capture as capture_mod
+    from .pipeline import work_dir
+
+    cfg = _load(config)
+    try:
+        out_path = capture_mod.run_calibrate(cfg, work_dir(cfg))
+    except ValueError as e:
+        # region 未設定・不正は利用者に明確なエラーとして返す（click が exit 1）。
+        raise click.ClickException(str(e)) from e
+    click.echo(f"✅ region {cfg.capture.region} を 1 枚撮影しました。")
+    click.echo(f"📄 保存先: {out_path}")
+    click.echo("👀 画像を開き、UI・柱・余白が入らず本文だけが写っているか確認してください。")
 
 
 @main.command()

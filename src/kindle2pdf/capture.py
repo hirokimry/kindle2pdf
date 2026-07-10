@@ -12,8 +12,21 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from .config import Config
+from .config import Config, validate_region
 from .state import State
+
+
+def run_calibrate(cfg: Config, work_dir: Path) -> Path:
+    """region を 1 枚だけ撮影し、保存先パスを返す（枠の目視確認用）。[P1]
+
+    未設定・不正な region は validate_region が明確な ValueError で弾く。
+    撮影後の画像を開けば UI・柱・余白が入らず本文だけが写るかを目視確認できる。
+    """
+    x, y, w, h = validate_region(cfg.capture.region)
+    work_dir.mkdir(parents=True, exist_ok=True)
+    out_path = work_dir / "calibrate.png"
+    grab([x, y, w, h], out_path)
+    return out_path
 
 
 def activate_kindle() -> None:
