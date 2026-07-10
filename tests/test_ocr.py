@@ -130,6 +130,26 @@ def test_ocr_all_missing_pages_dir(tmp_path, monkeypatch):
     assert state.ocr_done == 0
 
 
+def test_ocr_all_defaults_work_dir_and_state(tmp_path, monkeypatch):
+    """work_dir / state 省略時（pipeline の2引数呼び出し経路）の既定分岐を検証する。
+
+    work_dir 未指定 → work/<book_title>、state 未指定 → 内部で State() を生成する。
+    """
+    monkeypatch.setattr(ocr, "ocr_page", lambda path, cfg: _fake_items(path))
+    monkeypatch.chdir(tmp_path)  # 相対パス work/ を tmp_path 配下に閉じ込める
+    cfg = Config()
+    cfg.book_title = "my-book"
+    # book_title から導出される work/my-book/pages にダミーページを置く
+    pages_dir = tmp_path / "work" / "my-book" / "pages"
+    pages_dir.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", (8, 8), (255, 255, 255)).save(pages_dir / "page_0001.png")
+
+    # state も work_dir も渡さない（既定分岐）→ 例外なく完了する
+    ocr.ocr_all(cfg)
+
+    assert (tmp_path / "work" / "my-book" / "ocr" / "page_0001.json").exists()
+
+
 def test_load_page_items_roundtrip(tmp_path, monkeypatch):
     """保存した JSON を load_page_items で OcrItem タプルへ復元できる。"""
     monkeypatch.setattr(ocr, "ocr_page", lambda path, cfg: _fake_items(path))
