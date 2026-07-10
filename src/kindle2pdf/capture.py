@@ -9,6 +9,7 @@ Kindle操作なしに何度でも再実行できる。
 
 from __future__ import annotations
 
+import logging
 import subprocess
 import time
 from pathlib import Path
@@ -16,6 +17,8 @@ from pathlib import Path
 from . import imaging
 from .config import Config, validate_region
 from .state import State
+
+logger = logging.getLogger(__name__)
 
 # 矢印キーの macOS key code（osascript / System Events）。
 _KEY_CODE = {"right": 124, "left": 123}
@@ -165,6 +168,7 @@ def run_capture(
     # レジューム: 既存 state から直前確定フレーム・連続一致数を引き継ぐ。
     prev_hash = imaging.hex_to_hash(state.last_hash) if state.last_hash else None
     repeat = state.repeat_count
+    logger.info("撮影開始: %d ページ目から（上限 %d）", state.captured + 1, cap.max_pages)
 
     try:
         while state.captured < cap.max_pages:
@@ -175,6 +179,10 @@ def run_capture(
                 repeat += 1
                 state.repeat_count = repeat
                 if repeat >= cap.end_detect_repeats:
+                    logger.info(
+                        "最終ページを検出したため撮影を終了します（確定 %d ページ）",
+                        state.captured,
+                    )
                     state.save(state_path)
                     break
             else:
@@ -187,6 +195,7 @@ def run_capture(
                 state.hash_history.append(str(h))
                 repeat = 0
                 state.repeat_count = 0
+                logger.info("撮影確定: %d ページ目", state.captured)
 
             state.save(state_path)
             prev_hash = h

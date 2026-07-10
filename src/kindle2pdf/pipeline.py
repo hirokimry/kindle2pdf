@@ -83,16 +83,21 @@ def run(cfg: Config, state_path: str | Path) -> None:
     (wd / "output").mkdir(parents=True, exist_ok=True)
 
     if state.stage == "capture":
+        logger.info("=== capture 段を開始します ===")
         capture.run_capture(cfg, state, wd, state_path)
         state.advance_stage(); state.save(state_path)
     if state.stage == "preprocess":
+        logger.info("=== preprocess 段を開始します ===")
         # wd/state_path を渡し raw 1枚ごとに進捗を永続化する（capture 段と同じレジューム粒度）。
         preprocess.process_all(cfg, state, wd, state_path)
         state.advance_stage(); state.save(state_path)
     if state.stage == "ocr":
+        logger.info("=== ocr 段を開始します ===")
         # wd/state_path を渡しページ1枚ごとに進捗を永続化する（未OCRページから再開）。
         ocr.ocr_all(cfg, state, wd, state_path)
         state.advance_stage(); state.save(state_path)
     if state.stage == "build":
+        logger.info("=== build 段を開始します ===")
         build_stage(cfg, wd)
         state.advance_stage(); state.save(state_path)
+    logger.info("=== 全段完了（stage=%s）===", state.stage)

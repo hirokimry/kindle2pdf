@@ -10,12 +10,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from pathlib import Path
 
 from PIL import Image, ImageStat
 
 from .config import Config
 from .state import State
+
+logger = logging.getLogger(__name__)
 
 
 def split_spread(img: Image.Image) -> list[Image.Image]:
@@ -121,6 +124,9 @@ def process_all(
     start = state.preprocess_raw_done
     page_no = state.pages_total
     skipped = 0
+    logger.info(
+        "preprocess 開始: raw %d 枚（%d 枚目から処理）", len(raw_paths), start + 1
+    )
 
     for idx, rp in enumerate(raw_paths):
         if idx < start:
@@ -132,7 +138,7 @@ def process_all(
         # 黒画面異常フレームを除外する（config で min_brightness を調整可能）
         if _mean_brightness(img) < pcfg.min_brightness:
             skipped += 1
-            print(f"[preprocess] 黒画面異常のためスキップ: {rp.name}")
+            logger.warning("黒画面異常のためスキップ: %s", rp.name)
         else:
             # 見開きなら左右分割、単ページ運用なら分割しない
             columns = split_spread(img) if pcfg.split_spread else [img]
@@ -151,7 +157,7 @@ def process_all(
     state.pages_total = page_no
     if state_path is not None:
         state.save(state_path)
-    print(
-        f"[preprocess] 完了: raw {len(raw_paths)} 枚 → pages {page_no} ページ"
-        f"（スキップ {skipped} 枚）"
+    logger.info(
+        "preprocess 完了: raw %d 枚 → pages %d ページ（スキップ %d 枚）",
+        len(raw_paths), page_no, skipped,
     )

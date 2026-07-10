@@ -7,16 +7,31 @@
 
 from __future__ import annotations
 
+import logging
+
 import click
 
 from .config import Config
 from .state import State
 
 
+def _setup_logging() -> None:
+    """各段の進捗 INFO ログを標準エラーへ出す（未設定なら INFO で初期化）。
+
+    basicConfig は既存ハンドラがあれば no-op なので、ライブラリ利用時（テスト等）の
+    ログ設定を壊さない。CLI 実行時にだけ INFO 進捗が可視化される。
+    """
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+
+
 @click.group()
 @click.version_option(package_name="kindle2pdf")
 def main() -> None:
     """Kindle本を検索可能PDF化するフル自動パイプライン。"""
+    _setup_logging()
 
 
 def _load(config: str) -> Config:

@@ -96,3 +96,9 @@ class Config:
         validate_region(self.capture.region)
         if self.capture.page_turn_key not in ("right", "left"):
             raise ValueError("capture.page_turn_key は right / left のいずれか。")
+        fmt = self.build.image_format.lower()
+        if fmt not in ("jpeg", "jpg", "png"):
+            raise ValueError("build.image_format は jpeg / png のいずれか。")
+        # JPEG 品質は 1〜100（Pillow の許容範囲）。PNG は可逆なので品質検証を課さない。
+        if fmt in ("jpeg", "jpg") and not 1 <= self.build.jpeg_quality <= 100:
+            raise ValueError("build.jpeg_quality は 1〜100 の範囲で指定してください。")
