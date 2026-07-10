@@ -46,7 +46,15 @@ source .venv/bin/activate
 pip install -e ".[macos,dev]"   # ocrmac は macos extra。非macは省略
 ```
 
-**権限（macOS）**: OCR・撮影・PDF化に特別な権限は不要。**キー送出（ページ送り）を行うプロセス（＝この venv を起動した Terminal）にのみ「アクセシビリティ」権限**が要る。
+**権限（macOS）**: 撮影・ページ送りを行うプロセス（＝この venv を起動した Terminal）に **2 つの権限**が要る。OCR・PDF化には追加権限は不要。
+
+| 権限 | 用途 | 無いとどうなる |
+|------|------|--------------|
+| 🖥️ 画面収録（Screen Recording） | `screencapture` でページを撮影 | 撮影画像がデスクトップ壁紙のみになり本文が写らない |
+| ⌨️ アクセシビリティ | ページ送り（キー送出）・Kindle 前面化 | ページ送りが `-1719` で失敗する |
+
+- 付与後は Terminal の**再起動**が要る（特に画面収録）。
+- Kindle アプリ名は環境で異なる。新しめの Mac 版は `config.yaml` の `capture.app_name` を `"Amazon Kindle"` にする（`tell application "Kindle"` が `-1728` で失敗する場合）。
 
 ---
 
