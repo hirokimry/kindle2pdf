@@ -57,8 +57,14 @@ def build_stage(cfg: Config, wd: Path) -> Path:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     pages = _assemble_pages(wd)
     if not pages:
-        logger.warning("pages/ に確定ページがありません: %s（PDF生成をスキップ）", wd / "pages")
-        return out_path
+        # 確定ページ0枚は上流(capture/preprocess)が1枚も生成できなかったエラー状態。
+        # ここで黙って戻ると run() が advance_stage() で stage を done に進め、PDFが
+        # 出ていないのに正常終了に見えてしまう。明示的に例外を送出して停止する。
+        raise RuntimeError(
+            f"確定ページがありません（{wd / 'pages'} が空）。"
+            "capture/preprocess が1ページも生成していない可能性があります。"
+            "state.json と work/ の内容を確認してください。"
+        )
     tmp_path = out_path.with_name(out_path.name + ".tmp")
     build_pdf.build(pages, tmp_path, cfg)
     os.replace(tmp_path, out_path)

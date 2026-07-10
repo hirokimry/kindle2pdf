@@ -225,6 +225,35 @@ def test_resume_after_kill_in_ocr_stage(tmp_path, monkeypatch):
     assert State.load(state_path).stage == "done"
 
 
+def test_build_stage_raises_when_no_pages(tmp_path, monkeypatch):
+    """確定ページ0枚なら build_stage は例外を送出しPDFを作らない（黙って成功しない）。"""
+    monkeypatch.chdir(tmp_path)
+    cfg = _single_page_config(tmp_path)
+    wd = pipeline.work_dir(cfg)
+    (wd / "pages").mkdir(parents=True)
+    (wd / "ocr").mkdir(parents=True)
+
+    with pytest.raises(RuntimeError):
+        pipeline.build_stage(cfg, wd)
+
+    assert not pipeline.output_path(cfg, wd).exists()
+
+
+def test_run_does_not_reach_done_when_build_has_no_pages(tmp_path, monkeypatch):
+    """pages/ が空のまま build 段に入ると run は例外で止まり done に進まない。"""
+    monkeypatch.chdir(tmp_path)
+    cfg = _single_page_config(tmp_path)
+    state_path = tmp_path / "state.json"
+    State(book_title=cfg.book_title, stage="build").save(state_path)
+
+    with pytest.raises(RuntimeError):
+        pipeline.run(cfg, state_path)
+
+    # 例外で停止 → stage は build のまま（再開余地を残す）、PDF も未生成
+    assert State.load(state_path).stage == "build"
+    assert not pipeline.output_path(cfg, pipeline.work_dir(cfg)).exists()
+
+
 def test_run_is_noop_when_done(tmp_path, monkeypatch):
     """stage=='done' の再実行は何も走らせない（冪等）。"""
     monkeypatch.chdir(tmp_path)
