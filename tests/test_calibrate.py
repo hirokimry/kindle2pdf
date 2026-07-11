@@ -17,6 +17,7 @@ from kindle2pdf.config import Config, validate_region
 
 def _cfg(region: list) -> Config:
     cfg = Config()
+    cfg.capture.auto_region = False  # 静的 region 経路を検証する
     cfg.capture.region = region
     return cfg
 
@@ -95,7 +96,8 @@ def test_cli_calibrate_success(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     # 生の値が float でも表示は int 正規化後の region になることを確認する。
     (tmp_path / "config.yaml").write_text(
-        "book_title: t\ncapture:\n  region: [1.9, 2, 300, 400]\n", encoding="utf-8"
+        "book_title: t\ncapture:\n  auto_region: false\n  region: [1.9, 2, 300, 400]\n",
+        encoding="utf-8",
     )
     monkeypatch.setattr(
         capture_mod, "grab", lambda region, out_path: Path(out_path).write_bytes(b"x")
@@ -112,7 +114,8 @@ def test_cli_calibrate_success(tmp_path, monkeypatch):
 def test_cli_calibrate_invalid_region_errors(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "config.yaml").write_text(
-        "book_title: t\ncapture:\n  region: [0, 0, 0, 0]\n", encoding="utf-8"
+        "book_title: t\ncapture:\n  auto_region: false\n  region: [0, 0, 0, 0]\n",
+        encoding="utf-8",
     )
 
     def boom(*a, **k):

@@ -38,3 +38,24 @@ def mean_brightness(path: str | Path) -> float:
     """平均輝度（グレースケール）。黒画面異常フレームの検知に使う。"""
     with Image.open(path) as im:
         return ImageStat.Stat(im.convert("L")).mean[0]
+
+
+def crop_top_fraction(path: str | Path, fraction: float) -> None:
+    """画像の上端を高さ比率 fraction だけ切り落として上書き保存する。
+
+    Why: `screencapture -l` はウィンドウ全体（macOS タイトルバー帯を含む）を撮る。
+    その帯 **だけ** を落とすため、本文側は一切触らない。比率で指定するのは、
+    retina 倍率が環境で変わっても pt→px 換算が不要になり同じ結果を保つため
+    （fraction はウィンドウ座標でも画像座標でも同一）。fraction は AX 実測の
+    タイトルバー高さ ÷ ウィンドウ高さから求める（固定 px を持たない）。
+    """
+    if fraction <= 0:
+        return
+    with Image.open(path) as im:
+        w, h = im.size
+        top = round(h * fraction)
+        # 帯が画像全体を覆う異常値では切らない（本文喪失を防ぐ安全弁）。
+        if top <= 0 or top >= h:
+            return
+        cropped = im.crop((0, top, w, h))
+    cropped.save(path)

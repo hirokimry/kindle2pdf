@@ -76,7 +76,8 @@ pip install -e .
 book_title: "sample-book"
 
 capture:
-  region: [x, y, width, height]   # screencapture -R の値。calibrateで実測
+  auto_region: true               # true=ウィンドウ自動検出→ -l 撮影し AX実測のタイトルバー帯だけ上端クロップ（本文余白は削らない/通常ウィンドウ前提）/ false=下の静的 region
+  region: [x, y, width, height]   # auto_region=false 時のみ使用。screencapture -R の値
   spread_mode: true               # true=見開き両ページ（左右分割） / false=片ページ（分割しない）。見開き/片ページを決める唯一のスイッチ
   page_turn_key: "right"          # right(key code 124) / left(123)
   page_turn_method: "osascript"   # osascript | cliclick

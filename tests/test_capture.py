@@ -26,6 +26,7 @@ def _make_cfg(**cap_over) -> Config:
     """テスト用 Config（待機0秒・安定確認1回）。"""
     defaults = dict(
         region=[0, 0, 10, 10],
+        auto_region=False,  # テストは静的 region + FakeScreen で撮影経路を検証する
         stable_required=1,
         end_detect_repeats=3,
         same_threshold=2,
@@ -54,7 +55,7 @@ class FakeScreen:
         self.current = None
         self.turns = 0
 
-    def grab(self, region, out_path):
+    def grab(self, region, out_path, window_id=None):
         if self.cycle:
             idx = self.gi % len(self.frames)
         else:
@@ -269,9 +270,9 @@ def test_pending_temp_is_not_dotfile_and_outside_raw(monkeypatch, tmp_path):
     seen = []
     fake = FakeScreen([(HASH_A, 200), (HASH_A, 200), (HASH_A, 200)])
 
-    def rec_grab(region, out_path):
+    def rec_grab(region, out_path, window_id=None):
         seen.append(Path(out_path))
-        return fake.grab(region, out_path)
+        return fake.grab(region, out_path, window_id)
 
     monkeypatch.setattr(capture, "grab", rec_grab)
     monkeypatch.setattr(capture, "turn_page", fake.turn_page)
@@ -294,7 +295,7 @@ def test_run_calibrate_activates_kindle_before_grab(monkeypatch, tmp_path):
         lambda app_name="Kindle": order.append(("activate", app_name)),
     )
 
-    def rec_grab(region, out_path):
+    def rec_grab(region, out_path, window_id=None):
         order.append(("grab", str(out_path)))
         Path(out_path).write_bytes(b"x")
         return str(out_path)
@@ -303,3 +304,64 @@ def test_run_calibrate_activates_kindle_before_grab(monkeypatch, tmp_path):
     capture.run_calibrate(_make_cfg(region=[0, 0, 10, 10], app_name="Amazon Kindle"), tmp_path)
     assert [o[0] for o in order] == ["activate", "grab"]
     assert order[0][1] == "Amazon Kindle"
+
+
+# --- ウィンドウ自動検出（auto_region: -l ウィンドウID撮影）---
+
+
+class _FakeQuartz:
+    """CGWindowListCopyWindowInfo を模した最小スタブ。"""
+
+    kCGWindowListOptionAll = 0
+    kCGNullWindowID = 0
+
+    def __init__(self, windows):
+        self._windows = windows
+
+    def CGWindowListCopyWindowInfo(self, opt, wid):  # noqa: N802
+        return self._windows
+
+
+def test_detect_window_id_picks_largest_layer0_kindle(monkeypatch):
+    """app 名一致・レイヤ0・最大面積のウィンドウを本体 ID として選ぶ。"""
+    windows = [
+        {"kCGWindowOwnerName": "Kindle", "kCGWindowLayer": 0, "kCGWindowNumber": 11,
+         "kCGWindowOwnerPID": 555,
+         "kCGWindowBounds": {"X": 0, "Y": 36, "Width": 1470, "Height": 920}},
+        {"kCGWindowOwnerName": "Kindle", "kCGWindowLayer": 0, "kCGWindowNumber": 22,
+         "kCGWindowOwnerPID": 555,
+         "kCGWindowBounds": {"X": 0, "Y": 0, "Width": 1470, "Height": 36}},   # 小さい補助窓
+        {"kCGWindowOwnerName": "Kindle", "kCGWindowLayer": 26, "kCGWindowNumber": 33,
+         "kCGWindowOwnerPID": 555,
+         "kCGWindowBounds": {"X": 0, "Y": 0, "Width": 1470, "Height": 36}},   # レイヤ0でない
+        {"kCGWindowOwnerName": "Finder", "kCGWindowLayer": 0, "kCGWindowNumber": 44,
+         "kCGWindowOwnerPID": 999,
+         "kCGWindowBounds": {"X": 0, "Y": 0, "Width": 9999, "Height": 9999}},  # 別アプリ
+    ]
+    monkeypatch.setattr(capture, "Quartz", _FakeQuartz(windows))
+    wid, rect, pid = capture.detect_window_id("Amazon Kindle")
+    assert wid == 11
+    assert rect == (0, 36, 1470, 920)
+    assert pid == 555  # AX でタイトルバーを実測するため本体ウィンドウの PID を返す
+
+
+def test_detect_window_id_raises_when_no_kindle(monkeypatch):
+    """Kindle ウィンドウが無ければ明確なエラーを出す。"""
+    monkeypatch.setattr(capture, "Quartz", _FakeQuartz([]))
+    with pytest.raises(RuntimeError, match="見つかりません"):
+        capture.detect_window_id("Amazon Kindle")
+
+
+def test_grab_uses_window_id_flag(monkeypatch):
+    """window_id 指定時は screencapture -l <id> でウィンドウを直接撮る（-R を使わない）。"""
+    calls = {}
+    import subprocess as sp
+
+    def fake_run(cmd, check):
+        calls["cmd"] = cmd
+        Path(cmd[-1]).write_bytes(b"x")
+
+    monkeypatch.setattr(sp, "run", fake_run)
+    capture.grab(None, "/tmp/x.png", window_id=79362)
+    assert "-l" in calls["cmd"] and "79362" in calls["cmd"]
+    assert not any(str(c).startswith("-R") for c in calls["cmd"])

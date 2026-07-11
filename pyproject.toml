@@ -18,9 +18,13 @@ dependencies = [
   "click>=8",         # CLI
 ]
 
-# Apple Vision OCR は macOS 専用。非macでは import 時に失敗するため extra に分離する。
+# Apple Vision OCR・ウィンドウ検出・AX は macOS 専用。非macでは import 時に失敗するため extra に分離する。
 [project.optional-dependencies]
-macos = ["ocrmac>=1.0"]
+macos = [
+  "ocrmac>=1.0",                               # Apple Vision OCR
+  "pyobjc-framework-Quartz>=10",               # CGWindowList でウィンドウ ID 検出（screencapture -l 用）
+  "pyobjc-framework-ApplicationServices>=10",  # AX でタイトルバー高さを実測し上端を動的クロップ
+]
 dev = ["pytest>=8"]
 
 [project.scripts]
