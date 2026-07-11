@@ -44,7 +44,7 @@ def _single_page_config(tmp_path: Path) -> Config:
     cfg = Config()
     cfg.book_title = "test-book"
     cfg.capture.region = [0, 0, IMG_W, IMG_H]
-    cfg.capture.spread_mode = False       # 見開き分割しない（1枚=1ページ）
+    cfg.capture.spread_mode = False            # 見開き分割しない（1枚=1ページ）
     cfg.preprocess.trim = {}                   # トリミング無効（黒矩形位置を保つ）
     cfg.preprocess.min_brightness = 0          # 合成画像を黒画面誤判定しない
     return cfg

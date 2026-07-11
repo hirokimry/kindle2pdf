@@ -95,7 +95,8 @@ def process_all(
         3. 比率トリミングで UI・柱・余白を除去
         4. `naming.page_filename()`（pages/page_{n:06d}.png）に単一カラム・UI無しで連番出力
 
-    見開きN枚を分割すると 2N ページになる。全て cfg.preprocess で切替可能。
+    見開きN枚を分割すると 2N ページになる。分割の有無は cfg.capture.spread_mode、
+    トリミング/黒画面閾値は cfg.preprocess で切替可能。
     処理後の確定ページ数は state.pages_total に記録する。
 
     冪等クリアとレジュームを両立する（仕様 F-8）:
