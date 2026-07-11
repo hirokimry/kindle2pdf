@@ -111,6 +111,47 @@ def test_cli_calibrate_success(tmp_path, monkeypatch):
     assert (tmp_path / "work" / "t" / "calibrate.png").exists()
 
 
+def test_cli_calibrate_auto_region_runtimeerror_is_friendly(tmp_path, monkeypatch):
+    """auto_region の検出失敗(RuntimeError)を生 traceback でなく明確なエラーで返す。"""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config.yaml").write_text(
+        "book_title: t\ncapture:\n  auto_region: true\n", encoding="utf-8"
+    )
+
+    def boom(cfg, work_dir):
+        # Kindle 未起動・アクセシビリティ権限未付与など初回失敗を模す。
+        raise RuntimeError("AX で信号機ボタンを検出できませんでした")
+
+    monkeypatch.setattr(capture_mod, "run_calibrate", boom)
+
+    result = CliRunner().invoke(main, ["calibrate", "--config", "config.yaml"])
+
+    assert result.exit_code != 0
+    # ClickException 経由の整形メッセージであること（生 traceback でない）。
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "信号機ボタン" in result.output
+
+
+def test_cli_run_runtimeerror_is_friendly(tmp_path, monkeypatch):
+    """run コマンドも検出失敗(RuntimeError)を明確なエラーで返す（生 traceback にしない）。"""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config.yaml").write_text(
+        "book_title: t\ncapture:\n  auto_region: true\n", encoding="utf-8"
+    )
+    import kindle2pdf.pipeline as pipeline_mod
+
+    def boom(cfg, state_path):
+        raise RuntimeError("Kindle ウィンドウが見つかりません")
+
+    monkeypatch.setattr(pipeline_mod, "run", boom)
+
+    result = CliRunner().invoke(main, ["run", "--config", "config.yaml"])
+
+    assert result.exit_code != 0
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "Kindle ウィンドウ" in result.output
+
+
 def test_cli_calibrate_invalid_region_errors(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "config.yaml").write_text(
