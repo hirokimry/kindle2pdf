@@ -352,6 +352,62 @@ def test_detect_window_id_raises_when_no_kindle(monkeypatch):
         capture.detect_window_id("Amazon Kindle")
 
 
+def _one_kindle_window(number=900, pid=42, bounds=(0, 37, 1470, 919)):
+    x, y, w, h = bounds
+    return [{
+        "kCGWindowOwnerName": "Kindle", "kCGWindowLayer": 0, "kCGWindowNumber": number,
+        "kCGWindowOwnerPID": pid,
+        "kCGWindowBounds": {"X": x, "Y": y, "Width": w, "Height": h},
+    }]
+
+
+def test_run_capture_auto_region_wires_window_id_and_crop(monkeypatch, tmp_path):
+    """auto_region=True（既定経路）で window_id と crop 比率が grab / crop まで配線される。"""
+    grabbed, cropped = [], []
+
+    def rec_grab(region, out_path, window_id=None):
+        grabbed.append(window_id)
+        Path(out_path).write_bytes(b"x")
+        return str(out_path)
+
+    monkeypatch.setattr(capture, "Quartz", _FakeQuartz(_one_kindle_window()))
+    monkeypatch.setattr(capture, "detect_titlebar_pt", lambda pid, bounds: 28.0)
+    monkeypatch.setattr(capture, "grab", rec_grab)
+    monkeypatch.setattr(imaging, "crop_top_fraction", lambda p, f: cropped.append(f))
+    monkeypatch.setattr(imaging, "mean_brightness", lambda p: 200)
+    monkeypatch.setattr(imaging, "phash", lambda p: imagehash.hex_to_hash(HASH_A))
+    monkeypatch.setattr(capture, "turn_page", lambda cfg: None)
+
+    capture.run_capture(
+        _make_cfg(auto_region=True, app_name="Amazon Kindle"),
+        State(), tmp_path, tmp_path / "state.json",
+    )
+    # 検出した window_id で全フレーム撮影し、毎フレーム 28/919 の比率でクロップした。
+    assert grabbed and all(wid == 900 for wid in grabbed)
+    assert cropped and all(f == pytest.approx(28 / 919) for f in cropped)
+
+
+def test_run_calibrate_auto_returns_crop_adjusted_region(monkeypatch, tmp_path):
+    """auto_region の calibrate は window_id で撮り、返す region をクロップ後に補正する。"""
+    calls = []
+
+    def rec_grab(region, out_path, window_id=None):
+        calls.append(window_id)
+        Path(out_path).write_bytes(b"x")
+        return str(out_path)
+
+    monkeypatch.setattr(capture, "Quartz", _FakeQuartz(_one_kindle_window()))
+    monkeypatch.setattr(capture, "detect_titlebar_pt", lambda pid, bounds: 28.0)
+    monkeypatch.setattr(capture, "grab", rec_grab)
+    monkeypatch.setattr(imaging, "crop_top_fraction", lambda p, f: None)
+
+    out_path, region = capture.run_calibrate(
+        _make_cfg(auto_region=True, app_name="Amazon Kindle"), tmp_path
+    )
+    assert calls == [900]                          # window_id で直接撮った
+    assert region == (0, 37 + 28, 1470, 919 - 28)  # 上端クロップぶん y を下げ h を縮めた
+
+
 def test_grab_uses_window_id_flag(monkeypatch):
     """window_id 指定時は screencapture -l <id> でウィンドウを直接撮る（-R を使わない）。"""
     calls = {}

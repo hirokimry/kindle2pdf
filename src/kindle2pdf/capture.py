@@ -63,6 +63,12 @@ def run_calibrate(cfg: Config, work_dir: Path) -> tuple[Path, tuple[int, int, in
         win_h = region[3]
         if win_h:
             imaging.crop_top_fraction(out_path, titlebar_pt / win_h)
+            # 返す region は保存画像と一致させる（上端クロップぶん y を下げ h を縮める）。
+            # calibrate は「実際に撮影に使った領域」を数値表示するため、クロップ前の
+            # ウィンドウ矩形をそのまま返すと表示高さが実画像より大きくなり誤解を招く。
+            x, y, w, h = region
+            cut = round(titlebar_pt)
+            region = (x, y + cut, w, h - cut)
     else:
         # 静的 region 運用: Kindle を前面化してから領域を撮る（未実測は ValueError で弾く）。
         activate_kindle(cfg.capture.app_name)
