@@ -213,9 +213,14 @@ def detect_titlebar_pt(pid: int, window_bounds: tuple[int, int, int, int]) -> fl
     top_light = min(lights, key=lambda fr: fr[1])
     center_y = top_light[1] + top_light[3] / 2
     titlebar_pt = 2 * (center_y - wy)
-    if titlebar_pt <= 0:
+    # 実測値は「正でウィンドウ高より小さい」範囲に必ず収まる（帯はウィンドウの一部）。
+    # ここを外れる値は AX の異常応答であり、そのまま使うと crop 比率>=1 で帯を消せず
+    # フレーム入り画像を黙って量産する / calibrate の region 高さが負になる。CEO 制約
+    # 「枠は論外」に従い、黙って劣化させず明確なエラーで止める。
+    if not 0 < titlebar_pt < wh:
         raise RuntimeError(
-            f"タイトルバー高さの算出結果が不正です（{titlebar_pt:.1f}pt）。"
+            f"タイトルバー高さの実測値が異常です（{titlebar_pt:.1f}pt / ウィンドウ高 {wh}pt）。"
+            "Kindle が通常ウィンドウ表示か、Terminal のアクセシビリティ権限を確認してください。"
         )
     return titlebar_pt
 

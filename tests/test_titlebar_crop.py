@@ -114,6 +114,15 @@ def test_titlebar_raises_without_traffic_lights(monkeypatch):
         capture.detect_titlebar_pt(1, (0, 37, 1470, 919))
 
 
+def test_titlebar_raises_on_abnormal_measurement(monkeypatch):
+    """帯高がウィンドウ高以上と実測される異常値は、黙って劣化させず明確なエラーで止める。"""
+    # window 高 50、close ボタン中心 62 → 帯高 2×(62−37)=50 >= 50（異常）。
+    app = _window_with_traffic_light((0, 37, 100, 50), (6, 54, 16, 16))
+    monkeypatch.setattr(capture, "_AX", _FakeAX(app))
+    with pytest.raises(RuntimeError, match="異常"):
+        capture.detect_titlebar_pt(1, (0, 37, 100, 50))
+
+
 def test_titlebar_raises_without_ax_windows(monkeypatch):
     """AX でウィンドウを取得できない（権限不足相当）と権限付与を促すエラー。"""
     app = _AXElem({})  # AXWindows 属性なし
