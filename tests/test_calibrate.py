@@ -152,6 +152,40 @@ def test_cli_run_runtimeerror_is_friendly(tmp_path, monkeypatch):
     assert "Kindle ウィンドウ" in result.output
 
 
+def test_cli_capture_runtimeerror_is_friendly(tmp_path, monkeypatch):
+    """capture コマンドも検出失敗(RuntimeError)を明確なエラーで返す（生 traceback にしない）。"""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config.yaml").write_text(
+        "book_title: t\ncapture:\n  auto_region: true\n", encoding="utf-8"
+    )
+
+    def boom(cfg, st, wd, state_path):
+        raise RuntimeError("Quartz が利用できません")
+
+    monkeypatch.setattr(capture_mod, "run_capture", boom)
+
+    result = CliRunner().invoke(main, ["capture", "--config", "config.yaml"])
+
+    assert result.exit_code != 0
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "Quartz" in result.output
+
+
+def test_cli_config_load_error_is_friendly(tmp_path, monkeypatch):
+    """config 読込時の廃止キー ValueError も生 traceback でなく明確なエラーで返す。"""
+    monkeypatch.chdir(tmp_path)
+    # 廃止キー split_spread は Config.load が ValueError を送出する。
+    (tmp_path / "config.yaml").write_text(
+        "book_title: t\npreprocess:\n  split_spread: true\n", encoding="utf-8"
+    )
+
+    result = CliRunner().invoke(main, ["calibrate", "--config", "config.yaml"])
+
+    assert result.exit_code != 0
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "split_spread" in result.output
+
+
 def test_cli_calibrate_invalid_region_errors(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "config.yaml").write_text(

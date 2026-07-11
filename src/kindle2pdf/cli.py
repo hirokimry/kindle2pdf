@@ -61,9 +61,10 @@ def calibrate(config: str) -> None:
     from . import capture as capture_mod
     from .pipeline import work_dir
 
-    cfg = _load(config)
     with _friendly_errors():
-        # region 未設定(ValueError)・auto_region の検出失敗(RuntimeError)を明確なエラーで返す。
+        # config 読込(廃止キー等の ValueError)・region 未設定・auto_region の検出失敗
+        # (RuntimeError)を、全て明確なエラーで返す（生 traceback にしない）。
+        cfg = _load(config)
         out_path, region = capture_mod.run_calibrate(cfg, work_dir(cfg))
     x, y, w, h = region
     # 生の config 値ではなく実際に撮影に使った正規化済み region を表示する。
@@ -91,8 +92,9 @@ def capture(config: str, state_path: str) -> None:
     from . import capture as capture_mod
     from .pipeline import work_dir
 
-    cfg = _load(config)
     with _friendly_errors():
+        # config 読込・検証・撮影の各段が投げるドメイン例外を明確なエラーで返す。
+        cfg = _load(config)
         cfg.validate()
         st = State.load(state_path)
         capture_mod.run_capture(cfg, st, work_dir(cfg), state_path)
