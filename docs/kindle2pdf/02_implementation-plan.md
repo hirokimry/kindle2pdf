@@ -77,7 +77,7 @@ book_title: "sample-book"
 
 capture:
   region: [x, y, width, height]   # screencapture -R の値。calibrateで実測
-  spread_mode: true               # 見開き2ページ表示か（true=左右分割する）
+  spread_mode: true               # true=見開き両ページ（左右分割） / false=片ページ（分割しない）。見開き/片ページを決める唯一のスイッチ
   page_turn_key: "right"          # right(key code 124) / left(123)
   page_turn_method: "osascript"   # osascript | cliclick
   page_turn_wait: 1.0             # ページ送り後の描画待ち秒
@@ -90,7 +90,6 @@ capture:
 
 preprocess:
   trim: {top: 0.11, bottom: 0.035, left: 0.015, right: 0.015}  # 比率トリミング
-  split_spread: true              # 中央でL/R分割
   min_brightness: 20              # これ未満は黒画面異常として除外
 
 ocr:

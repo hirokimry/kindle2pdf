@@ -5,7 +5,7 @@ book_title: "sample-book"
 capture:
   region: [0, 0, 0, 0]            # [x, y, w, h] screencapture -R の値。calibrate で実測
   app_name: "Kindle"              # Kindle の AppleScript 名。新しめの Mac 版は "Amazon Kindle"
-  spread_mode: true               # 見開き2ページ表示か（true=左右分割する）
+  spread_mode: true               # true=見開き両ページ（左右分割する） / false=片ページ（分割しない）
   page_turn_key: "right"          # right(key code 124) / left(123)。右綴じ本は要確認
   page_turn_method: "osascript"   # osascript | cliclick
   page_turn_wait: 1.0             # ページ送り後の描画待ち秒
@@ -19,7 +19,6 @@ capture:
 
 preprocess:
   trim: { top: 0.11, bottom: 0.035, left: 0.015, right: 0.015 }  # 比率トリミング
-  split_spread: true              # 中央でL/R分割
   min_brightness: 20              # これ未満は黒画面異常として除外
 
 ocr:
