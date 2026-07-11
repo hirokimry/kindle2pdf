@@ -52,15 +52,18 @@ def _mean_brightness(img: Image.Image) -> float:
     return ImageStat.Stat(img.convert("L")).mean[0]
 
 
-def _input_signature(pcfg, raw_paths: list[Path]) -> str:
+def _input_signature(pcfg, spread_mode: bool, raw_paths: list[Path]) -> str:
     """preprocess入力（config + raw集合）の署名を返す。
 
-    分割/トリミング/黒画面閾値の設定変更、または raw の増減・並び変化があると
-    署名が変わる。署名が前回と食い違えば pages/ を全再生成する（残留ページ混入を防ぐ）。
+    分割(spread_mode)/トリミング/黒画面閾値の設定変更、または raw の増減・並び変化が
+    あると署名が変わる。署名が前回と食い違えば pages/ を全再生成する（残留ページ混入を防ぐ）。
+
+    spread_mode は capture 設定由来だが分割の有無を左右するため署名に含める。private
+    ヘルパの依存を狭く保つため Config 全体ではなく bool スカラーだけを受け取る。
     """
     payload = json.dumps(
         {
-            "split_spread": pcfg.split_spread,
+            "spread_mode": spread_mode,
             "trim": pcfg.trim or {},
             "min_brightness": pcfg.min_brightness,
             "raw": [p.name for p in raw_paths],
@@ -88,7 +91,7 @@ def process_all(
 
     処理フロー（各 raw 画像ごと）:
         1. 黒画面異常フレーム除外（min_brightness 未満はスキップ）
-        2. 見開き左右分割（split_spread が真なら1枚→2カラム、偽なら単ページ）
+        2. 見開き左右分割（capture.spread_mode が真なら1枚→2カラム、偽なら片ページ）
         3. 比率トリミングで UI・柱・余白を除去
         4. `naming.page_filename()`（pages/page_{n:06d}.png）に単一カラム・UI無しで連番出力
 
@@ -102,13 +105,16 @@ def process_all(
     state_path 指定時は raw 1枚ごとに state を永続化し、途中Kill後も続きから再開できる。
     """
     pcfg = cfg.preprocess
+    # 見開き分割の可否は「見開き表示で撮ったか」＝撮影された画像の性質なので capture 由来。
+    # capture.spread_mode を唯一のスイッチとし preprocess はそれを参照する（重複設定を排除）。
+    spread_mode = cfg.capture.spread_mode
     wd = Path(work_dir) if work_dir is not None else Path("work") / cfg.book_title
     raw_dir = wd / "raw"
     pages_dir = wd / "pages"
     pages_dir.mkdir(parents=True, exist_ok=True)
 
     raw_paths = sorted(raw_dir.glob("*.png"))
-    sig = _input_signature(pcfg, raw_paths)
+    sig = _input_signature(pcfg, spread_mode, raw_paths)
 
     # 署名一致かつ消化途中なら中断→再実行とみなしてレジューム。それ以外は全再生成。
     resume = (
@@ -141,8 +147,8 @@ def process_all(
             skipped += 1
             logger.warning("黒画面異常のためスキップ: %s", rp.name)
         else:
-            # 見開きなら左右分割、単ページ運用なら分割しない
-            columns = split_spread(img) if pcfg.split_spread else [img]
+            # 見開きなら左右分割、片ページ運用なら分割しない（spread_mode は capture 由来）
+            columns = split_spread(img) if spread_mode else [img]
             for col in columns:
                 trimmed = trim(col, pcfg.trim or {})
                 page_no += 1

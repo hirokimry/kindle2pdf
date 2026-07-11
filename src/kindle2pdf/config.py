@@ -34,6 +34,8 @@ def validate_region(region: list[int]) -> tuple[int, int, int, int]:
 @dataclass
 class CaptureConfig:
     region: list[int] = field(default_factory=lambda: [0, 0, 0, 0])
+    # 見開き2ページ表示か（true=左右分割する / false=片ページで分割しない）。
+    # 見開き/片ページの切替はこのフラグ 1 つで決まる（preprocess が参照する唯一のスイッチ）。
     spread_mode: bool = True
     # Kindle アプリの AppleScript 名。環境により "Amazon Kindle" 等になる
     # （`tell application "Kindle"` が -1728 で失敗する環境がある）。
@@ -55,7 +57,6 @@ class PreprocessConfig:
     trim: dict = field(
         default_factory=lambda: {"top": 0.11, "bottom": 0.035, "left": 0.015, "right": 0.015}
     )
-    split_spread: bool = True
     min_brightness: int = 20
 
 
@@ -86,6 +87,15 @@ class Config:
     def load(cls, path: str | Path) -> "Config":
         """config.yaml を読み込んで Config を構築する。未指定キーは既定値。"""
         raw = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+        # 廃止キー split_spread は cryptic な TypeError ではなく移行を促す明確なエラーにする。
+        # 見開き/片ページの切替は capture.spread_mode に統一された（旧 preprocess.split_spread）。
+        if isinstance(raw.get("preprocess"), dict) and "split_spread" in raw["preprocess"]:
+            raise ValueError(
+                "preprocess.split_spread は廃止されました。"
+                "見開き/片ページの切替は capture.spread_mode を使ってください"
+                "（true=見開き左右分割 / false=片ページ）。"
+                "config.yaml の preprocess.split_spread 行を削除してください。"
+            )
         return cls(
             book_title=raw.get("book_title", "sample-book"),
             capture=CaptureConfig(**(raw.get("capture") or {})),

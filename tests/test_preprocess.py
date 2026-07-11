@@ -37,17 +37,20 @@ def _setup_raw(tmp_path: Path, book: str, n: int, **make_kw) -> Path:
     return raw_dir
 
 
-def _cfg(book: str, **preprocess_kw) -> Config:
-    return Config(book_title=book, preprocess=PreprocessConfig(**preprocess_kw))
+def _cfg(book: str, *, spread_mode: bool = True, **preprocess_kw) -> Config:
+    # 見開き/片ページの切替は capture.spread_mode（唯一のスイッチ）で決まる。
+    cfg = Config(book_title=book, preprocess=PreprocessConfig(**preprocess_kw))
+    cfg.capture.spread_mode = spread_mode
+    return cfg
 
 
 def test_split_spread_doubles_page_count(tmp_path, monkeypatch):
-    """見開きN枚 → 2Nページになる（split_spread 有効時）。"""
+    """見開きN枚 → 2Nページになる（spread_mode=True 時）。"""
     monkeypatch.chdir(tmp_path)
     book = "sample"
     _setup_raw(tmp_path, book, n=3)
 
-    cfg = _cfg(book, split_spread=True)
+    cfg = _cfg(book, spread_mode=True)
     state = State(book_title=book)
     preprocess.process_all(cfg, state)
 
@@ -59,12 +62,12 @@ def test_split_spread_doubles_page_count(tmp_path, monkeypatch):
 
 
 def test_split_disabled_keeps_page_count(tmp_path, monkeypatch):
-    """split_spread=False なら分割せず N枚 → Nページ（config 切替の検証）。"""
+    """spread_mode=False なら分割せず N枚 → Nページ（config 切替の検証）。"""
     monkeypatch.chdir(tmp_path)
     book = "single"
     _setup_raw(tmp_path, book, n=4)
 
-    cfg = _cfg(book, split_spread=False)
+    cfg = _cfg(book, spread_mode=False)
     state = State(book_title=book)
     preprocess.process_all(cfg, state)
 
@@ -81,7 +84,7 @@ def test_pages_are_single_column_and_trimmed(tmp_path, monkeypatch):
     _setup_raw(tmp_path, book, n=1, size=(raw_w, raw_h))
 
     trim_ratios = {"top": 0.1, "bottom": 0.1, "left": 0.0, "right": 0.0}
-    cfg = _cfg(book, split_spread=True, trim=trim_ratios)
+    cfg = _cfg(book, spread_mode=True, trim=trim_ratios)
     state = State(book_title=book)
     preprocess.process_all(cfg, state)
 
@@ -102,7 +105,7 @@ def test_trim_disabled_by_empty_ratios(tmp_path, monkeypatch):
     raw_w, raw_h = 200, 100
     _setup_raw(tmp_path, book, n=1, size=(raw_w, raw_h))
 
-    cfg = _cfg(book, split_spread=True, trim={})
+    cfg = _cfg(book, spread_mode=True, trim={})
     state = State(book_title=book)
     preprocess.process_all(cfg, state)
 
@@ -121,7 +124,7 @@ def test_black_frame_is_excluded(tmp_path, monkeypatch):
     # 黒画面異常フレームを1枚追加（連番の末尾）
     Image.new("RGB", (200, 100), (0, 0, 0)).save(raw_dir / "page_0003.png")
 
-    cfg = _cfg(book, split_spread=True, min_brightness=20)
+    cfg = _cfg(book, spread_mode=True, min_brightness=20)
     state = State(book_title=book)
     preprocess.process_all(cfg, state)
 
@@ -155,17 +158,51 @@ def test_config_change_clears_stale_pages(tmp_path, monkeypatch):
 
     # 1回目: 見開き分割ありで 6 ページ生成
     state = State(book_title=book)
-    preprocess.process_all(_cfg(book, split_spread=True), state)
+    preprocess.process_all(_cfg(book, spread_mode=True), state)
     assert sorted(p.name for p in pages_dir.glob("*.png")) == [
         naming.page_filename(i) for i in range(1, 7)
     ]
 
-    # 2回目: 同じ state を使い split_spread=False に変更 → 3 ページに再生成
-    preprocess.process_all(_cfg(book, split_spread=False), state)
+    # 2回目: 同じ state を使い spread_mode=False に変更 → 3 ページに再生成
+    preprocess.process_all(_cfg(book, spread_mode=False), state)
     remaining = sorted(p.name for p in pages_dir.glob("*.png"))
     # 古い page_000004..page_000006 は残留せず、新しい 3 ページのみになる
     assert remaining == [naming.page_filename(i) for i in range(1, 4)]
     assert state.pages_total == 3
+
+
+def test_signature_changes_with_spread_mode(tmp_path):
+    """入力署名が spread_mode の切替で変わる（設定変更→pages/ 全再生成の担保）。"""
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    for i in range(1, 3):
+        _make_spread(raw_dir / naming.page_filename(i))
+    raw_paths = sorted(raw_dir.glob("*.png"))
+    pcfg = PreprocessConfig()
+
+    sig_spread = preprocess._input_signature(pcfg, True, raw_paths)
+    sig_single = preprocess._input_signature(pcfg, False, raw_paths)
+    assert sig_spread != sig_single
+
+
+def test_spread_mode_toggle_regenerates_pages(tmp_path, monkeypatch):
+    """spread_mode を切り替えると署名不一致で pages/ が全再生成される（見開き↔片ページ切替）。"""
+    monkeypatch.chdir(tmp_path)
+    book = "toggle"
+    _setup_raw(tmp_path, book, n=2)
+    pages_dir = tmp_path / "work" / book / "pages"
+    state = State(book_title=book)
+
+    # 見開き: 2枚 → 4ページ
+    preprocess.process_all(_cfg(book, spread_mode=True), state)
+    assert state.pages_total == 4
+
+    # 片ページに切替: 同じ state でも署名が変わり 2枚 → 2ページに全再生成
+    preprocess.process_all(_cfg(book, spread_mode=False), state)
+    assert state.pages_total == 2
+    assert sorted(p.name for p in pages_dir.glob("*.png")) == [
+        naming.page_filename(i) for i in range(1, 3)
+    ]
 
 
 def test_resume_skips_already_processed_raw(tmp_path, monkeypatch):
@@ -176,7 +213,7 @@ def test_resume_skips_already_processed_raw(tmp_path, monkeypatch):
     pages_dir = tmp_path / "work" / book / "pages"
     pages_dir.mkdir(parents=True, exist_ok=True)
 
-    pcfg = PreprocessConfig(split_spread=True)
+    pcfg = PreprocessConfig()
     raw_paths = sorted(raw_dir.glob("*.png"))
 
     # 中断状態を再現: 先頭2枚を消化済み（4ページ書き出し済み）とする state を用意
@@ -184,13 +221,14 @@ def test_resume_skips_already_processed_raw(tmp_path, monkeypatch):
         (pages_dir / naming.page_filename(i)).write_bytes(b"stub")
     state = State(
         book_title=book,
-        preprocess_sig=preprocess._input_signature(pcfg, raw_paths),
+        # 署名は spread_mode=True 前提で生成（下の _cfg も spread_mode=True）
+        preprocess_sig=preprocess._input_signature(pcfg, True, raw_paths),
         preprocess_raw_done=2,
         pages_total=4,
     )
     stub_mtime = (pages_dir / naming.page_filename(1)).stat().st_mtime
 
-    cfg = _cfg(book, split_spread=True)
+    cfg = _cfg(book, spread_mode=True)
     preprocess.process_all(cfg, state)
 
     pages = sorted(p.name for p in pages_dir.glob("*.png"))

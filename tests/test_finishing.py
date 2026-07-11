@@ -144,7 +144,7 @@ def test_preprocess_logs_progress(tmp_path, caplog):
     """preprocess が print ではなく logger で開始/完了ログを出す。"""
     cfg = Config()
     cfg.book_title = "log-book"
-    cfg.preprocess.split_spread = False
+    cfg.capture.spread_mode = False
     cfg.preprocess.trim = {}
     cfg.preprocess.min_brightness = 0
     wd = tmp_path / "wd"
@@ -164,7 +164,7 @@ def test_pipeline_logs_stage_banners(tmp_path, monkeypatch, caplog):
     cfg = Config()
     cfg.book_title = "banner-book"
     cfg.capture.region = [0, 0, IMG_W, IMG_H]
-    cfg.preprocess.split_spread = False
+    cfg.capture.spread_mode = False
     cfg.preprocess.trim = {}
     cfg.preprocess.min_brightness = 0
 
@@ -232,7 +232,7 @@ def test_preprocess_emits_padded_page_names(tmp_path):
     """preprocess が共通ヘルパーの桁で pages/ を採番する（辞書順ソート担保）。"""
     cfg = Config()
     cfg.book_title = "pad-book"
-    cfg.preprocess.split_spread = False
+    cfg.capture.spread_mode = False
     cfg.preprocess.trim = {}
     cfg.preprocess.min_brightness = 0
     wd = tmp_path / "wd"

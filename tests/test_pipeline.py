@@ -28,7 +28,7 @@ from kindle2pdf.state import State
 # 各ページに描く既知語（検索ヒット確認用）。ページ番号ごとに一意にする。
 WORDS = ["だいいち", "だいに", "だいさん", "だいよん"]
 
-# 生画像サイズ。preprocess の split_spread=False で1枚→1ページになるよう単ページ運用。
+# 生画像サイズ。capture.spread_mode=False で1枚→1ページになるよう片ページ運用。
 IMG_W, IMG_H = 400, 560
 
 
@@ -44,7 +44,7 @@ def _single_page_config(tmp_path: Path) -> Config:
     cfg = Config()
     cfg.book_title = "test-book"
     cfg.capture.region = [0, 0, IMG_W, IMG_H]
-    cfg.preprocess.split_spread = False       # 見開き分割しない（1枚=1ページ）
+    cfg.capture.spread_mode = False       # 見開き分割しない（1枚=1ページ）
     cfg.preprocess.trim = {}                   # トリミング無効（黒矩形位置を保つ）
     cfg.preprocess.min_brightness = 0          # 合成画像を黒画面誤判定しない
     return cfg
