@@ -74,10 +74,11 @@ def resolve_run_dir(
             return existing
     stamp = (now or datetime.now()).strftime(RUN_DIR_FORMAT)
     run_dir = bdir / stamp
-    # 同一秒に複数 run が始まった場合でも衝突しないよう連番で退避する。
+    # 同一秒に複数 run が始まった場合でも衝突しないよう連番で退避する。連番はゼロ埋めして
+    # 「名前昇順 = 作成時刻順」の不変条件を保つ（"-10" が "-9" より前に来る辞書順崩れを防ぐ）。
     suffix = 2
     while run_dir.exists():
-        run_dir = bdir / f"{stamp}-{suffix}"
+        run_dir = bdir / f"{stamp}-{suffix:02d}"
         suffix += 1
     run_dir.mkdir(parents=True, exist_ok=True)
     return run_dir
