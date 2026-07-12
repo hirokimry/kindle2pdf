@@ -114,8 +114,9 @@ def detect_window_id(
     wins = Quartz.CGWindowListCopyWindowInfo(
         Quartz.kCGWindowListOptionAll, Quartz.kCGNullWindowID
     )
-    # (面積, id, 矩形, pid)
-    best: tuple[int, int, tuple[int, int, int, int], int] | None = None
+    # (面積, id, 矩形, pid)。候補が複数出る（2冊同時・設定/検索パネル等）ときは
+    # 面積最大を本体とみなすが、誤ウィンドウをサイレントに撮り続ける事故を避けるため警告する。
+    candidates: list[tuple[int, int, tuple[int, int, int, int], int]] = []
     for w in wins:
         owner = w.get("kCGWindowOwnerName", "") or ""
         if keyword not in owner or w.get("kCGWindowLayer", 0) != 0:
@@ -127,11 +128,19 @@ def detect_window_id(
             int(b.get("Width", 0)),
             int(b.get("Height", 0)),
         )
-        area = rect[2] * rect[3]
-        if best is None or area > best[0]:
-            best = (area, int(w.get("kCGWindowNumber")), rect, int(w.get("kCGWindowOwnerPID", 0)))
-    if best is None:
+        candidates.append(
+            (rect[2] * rect[3], int(w.get("kCGWindowNumber")), rect, int(w.get("kCGWindowOwnerPID", 0)))
+        )
+    if not candidates:
         raise RuntimeError(f"Kindle ウィンドウが見つかりません（app_name={app_name!r}）")
+    candidates.sort(key=lambda c: c[0], reverse=True)
+    if len(candidates) > 1:
+        logger.warning(
+            "Kindle ウィンドウが %d 個見つかりました。面積最大の id=%s 矩形=%s を本体として撮影します"
+            "（意図と違う場合は不要なウィンドウ／パネルを閉じるか calibrate で確認してください）。",
+            len(candidates), candidates[0][1], candidates[0][2],
+        )
+    best = candidates[0]
     return best[1], best[2], best[3]
 
 

@@ -345,6 +345,24 @@ def test_detect_window_id_picks_largest_layer0_kindle(monkeypatch):
     assert pid == 555  # AX でタイトルバーを実測するため本体ウィンドウの PID を返す
 
 
+def test_detect_window_id_warns_on_multiple_candidates(monkeypatch, caplog):
+    """Kindle ウィンドウが複数見つかったら警告を出す（誤ウィンドウのサイレント撮影を防ぐ）。"""
+    windows = [
+        {"kCGWindowOwnerName": "Kindle", "kCGWindowLayer": 0, "kCGWindowNumber": 11,
+         "kCGWindowOwnerPID": 555,
+         "kCGWindowBounds": {"X": 0, "Y": 36, "Width": 1470, "Height": 920}},
+        {"kCGWindowOwnerName": "Kindle", "kCGWindowLayer": 0, "kCGWindowNumber": 22,
+         "kCGWindowOwnerPID": 555,
+         "kCGWindowBounds": {"X": 0, "Y": 36, "Width": 800, "Height": 600}},  # 2冊目/パネル
+    ]
+    monkeypatch.setattr(capture, "Quartz", _FakeQuartz(windows))
+    import logging
+    with caplog.at_level(logging.WARNING):
+        wid, rect, pid = capture.detect_window_id("Amazon Kindle")
+    assert wid == 11  # 面積最大を本体に選ぶ
+    assert any("面積最大" in r.getMessage() for r in caplog.records)
+
+
 def test_detect_window_id_raises_when_no_kindle(monkeypatch):
     """Kindle ウィンドウが無ければ明確なエラーを出す。"""
     monkeypatch.setattr(capture, "Quartz", _FakeQuartz([]))
