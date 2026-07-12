@@ -36,6 +36,11 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
+echo "=== 配布エントリの構文/import 検証（node --check） ==="
+# npx kindle2pdf のエントリそのもの。import typo・構文エラーを実行前に検知する
+# （public-ready.md 5節: 配布対象スクリプトは必ず自動テストを書く）。
+node --check cli/index.mjs && echo "OK: cli/index.mjs の構文検証成功"
+
 echo "=== Node フロント 単体テスト（node --test） ==="
 node --test "cli/test/*.test.mjs"
 
