@@ -77,8 +77,11 @@ def calibrate(config: str) -> None:
     with _friendly_errors():
         # config 読込(廃止キー等の ValueError)・region 未設定・auto_region の検出失敗
         # (RuntimeError)を、全て明確なエラーで返す（生 traceback にしない）。
-        # calibrate は 1 冊分の枠確認なので、個別 run ではなく book_dir 直下に保存する。
         cfg = _load(config)
+        # book_dir(cfg) は work/<book_title>/ を作る。book_title に / .. が混ざると work/ の
+        # 外へ書き込みうるため、run/capture と同じく撮影前に validate で弾く（#32）。
+        cfg.validate()
+        # calibrate は 1 冊分の枠確認なので、個別 run ではなく book_dir 直下に保存する。
         out_path, region = capture_mod.run_calibrate(cfg, book_dir(cfg))
     x, y, w, h = region
     # 生の config 値ではなく実際に撮影に使った正規化済み region を表示する。

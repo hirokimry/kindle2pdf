@@ -152,6 +152,32 @@ def test_run_rejects_unsafe_title_with_friendly_error(tmp_path, monkeypatch):
     assert opened == []  # 失敗時は自動オープンしない
 
 
+def test_calibrate_rejects_unsafe_book_title(tmp_path, monkeypatch):
+    """calibrate も book_dir(cfg) 作成前に book_title を検証し work/ 外流出を防ぐ（#32）。
+
+    calibrate は run/capture と違い pipeline.run を経由しないため、コマンド側で
+    cfg.validate() を呼んで同じ検証を効かせる。grab は monkeypatch で実撮影を避ける。
+    """
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config.yaml").write_text(
+        "book_title: ../escape\ncapture:\n"
+        '  app_name: "Kindle"\n  auto_region: false\n  region: [0, 0, 400, 560]\n',
+        encoding="utf-8",
+    )
+    from kindle2pdf import capture as capture_mod
+
+    called = {"grab": False}
+    monkeypatch.setattr(
+        capture_mod, "grab", lambda *a, **k: called.__setitem__("grab", True)
+    )
+
+    result = CliRunner().invoke(main, ["calibrate", "--config", "config.yaml"])
+
+    assert result.exit_code != 0
+    assert "book_title" in result.output  # book_title 検証で撮影前に止まる
+    assert called["grab"] is False  # work/ 外に書き込む前に弾かれる
+
+
 def test_run_default_progress_text_emits_no_json(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _write_config(tmp_path)
