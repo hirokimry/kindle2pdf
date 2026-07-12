@@ -43,6 +43,23 @@ test("runCaptureWithProgress: 進捗を spinner に描画し complete で output
   assert.equal(existsSync(cfg.dir), false); // 生成した temp config は破棄される
 });
 
+test("runCaptureWithProgress: resume=false をコア引数（--no-resume）まで届ける", async () => {
+  const cfg = fakeGeneratedConfig();
+  let receivedArgs;
+  const run = async ({ args, onEvent }) => {
+    receivedArgs = args;
+    onEvent({ event: "complete", output: "x.pdf" });
+    return { code: 0 };
+  };
+
+  await runCaptureWithProgress(
+    { title: "猫", layout: "single", resume: false },
+    { spinner: fakeSpinner(), ensure: () => cfg, run },
+  );
+
+  assert.ok(receivedArgs.includes("--no-resume"));
+});
+
 test("runCaptureWithProgress: error イベントを error に集約する", async () => {
   const cfg = fakeGeneratedConfig();
   const run = async ({ onEvent }) => {

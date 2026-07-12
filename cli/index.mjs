@@ -11,7 +11,9 @@ import { spawn } from "node:child_process";
 import { PAGE_LAYOUTS, validateTitle } from "./lib/args.mjs";
 import { runCaptureWithProgress } from "./lib/capture.mjs";
 import { decideMode } from "./lib/mode.mjs";
+import { loadPrefs, savePrefs } from "./lib/prefs.mjs";
 import { resolvePython } from "./lib/runner.mjs";
+import { hasIncompleteRun } from "./lib/runs.mjs";
 
 // コアの出力をそのまま流す（上級者/CI/非TTY）。装飾せず Python CLI と同じ挙動にする。
 function passthrough(args) {
@@ -32,6 +34,8 @@ async function wizard() {
   const p = await import("@clack/prompts");
   p.intro("📚 kindle2pdf — Kindle本を検索可能PDFに");
 
+  const prefs = loadPrefs();
+
   const title = await p.text({
     message: "📖 本のタイトルは？",
     placeholder: "例: 吾輩は猫である",
@@ -47,17 +51,38 @@ async function wizard() {
   const layout = await p.select({
     message: "📐 ページ構成は？（Kindle ウィンドウ幅で選びます）",
     options: PAGE_LAYOUTS.map((l) => ({ value: l.value, label: l.label, hint: l.hint })),
+    // 前回の選択を既定提示（よく変わらない項目は毎回選び直させない）。#35
+    initialValue: prefs.layout,
   });
   if (p.isCancel(layout)) {
     p.cancel("中止しました");
     return 1;
+  }
+  // 今回の回答を次回の既定として保存する。
+  savePrefs({ ...prefs, layout });
+
+  const titleStr = String(title).trim();
+  // 未完了の撮影がある本を選んだときだけ再開を確認する。無ければ確認せず新規で始める。#35
+  let resume;
+  if (hasIncompleteRun(titleStr)) {
+    const cont = await p.confirm({
+      message: "この本には中断した撮影があります。続きから再開しますか？（いいえ=新規で撮り直し）",
+    });
+    if (p.isCancel(cont)) {
+      p.cancel("中止しました");
+      return 1;
+    }
+    resume = cont === true;
   }
 
   const s = p.spinner();
   s.start("撮影を準備中…");
   // config 生成・撮影・進捗描画・temp 破棄・エラー集約は runCaptureWithProgress に委ねる
   // （@clack 非依存でテスト可能。wizard() は clack の入出力だけを担う）。
-  const { code, output, error } = await runCaptureWithProgress({ title, layout }, { spinner: s });
+  const { code, output, error } = await runCaptureWithProgress(
+    { title: titleStr, layout, resume },
+    { spinner: s },
+  );
 
   if (code === 0) {
     s.stop("✅ 完了");

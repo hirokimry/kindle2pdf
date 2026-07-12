@@ -121,12 +121,19 @@ def calibrate(config: str) -> None:
     show_default=True,
     help="進捗出力。text=人間向けログ / json=1行1イベントのJSON Lines（フロント連携用）。",
 )
+@click.option(
+    "--resume/--no-resume",
+    default=True,
+    show_default=True,
+    help="未完了の撮影があれば続きから再開する。--no-resume で未完了を無視し常に新規 run を作る。",
+)
 def run(
     config: str,
     title: str | None,
     reading_order: str | None,
     open_pdf: bool,
     progress_mode: str,
+    resume: bool,
 ) -> None:
     """capture→preprocess→ocr→build を全自動実行（レジューム対応）。[P7]
 
@@ -151,7 +158,8 @@ def run(
         # --progress json のときだけ機械可読シンクを差し込む。text は従来ログ経路のまま。
         sink = progress_mod.json_lines() if progress_mode == "json" else nullcontext()
         with sink:
-            run_dir = run_pipeline(cfg)
+            # --no-resume は未完了 run を無視して常に新規 run を作る（ウィザードの再開拒否経路）。
+            run_dir = run_pipeline(cfg, resume=resume)
         out_path = output_path(cfg, run_dir)
     # 完了PDFを自動で開く（--no-open で抑制）。エラーは _open_file 側で握り潰す。
     if open_pdf:

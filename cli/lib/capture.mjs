@@ -15,7 +15,7 @@ import { runCore } from "./runner.mjs";
 // ensure / run はテスト注入用の差し替え口（既定は実物）。
 // 返り値 { code, output, error }。error は「error イベント > stderr 末尾」の順で最も具体的な原因。
 export async function runCaptureWithProgress(
-  { title, layout },
+  { title, layout, resume },
   { spinner, ensure = ensureConfig, run = runCore } = {},
 ) {
   let lastOutput = "";
@@ -28,7 +28,14 @@ export async function runCaptureWithProgress(
   let generated = false;
   try {
     ({ path: configPath, generated } = ensure());
-    const args = buildCoreArgs({ title, layout, configPath, open: true, progress: "json" });
+    const args = buildCoreArgs({
+      title,
+      layout,
+      configPath,
+      open: true,
+      progress: "json",
+      resume,
+    });
     ({ code } = await run({
       args,
       onEvent: (ev) => {
