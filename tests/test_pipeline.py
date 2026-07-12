@@ -118,6 +118,63 @@ def test_run_full_pipeline_produces_searchable_pdf(tmp_path, monkeypatch):
     assert State.load(run_dir / "state.json").stage == "done"
 
 
+def test_run_emits_progress_events(tmp_path, monkeypatch):
+    """run が各段・各ページ・完了の進捗イベントを発火する（#32）。
+
+    シンクを差し込んだときだけイベントが観測でき、既定 no-op では従来挙動のまま。
+    """
+    from kindle2pdf import progress as progress_mod
+
+    monkeypatch.chdir(tmp_path)
+    cfg = _single_page_config(tmp_path)
+    _stub_capture_writes_raw(monkeypatch, n_pages=2)
+    _stub_ocr_page_by_page(monkeypatch)
+
+    events: list[dict] = []
+    progress_mod.set_sink(events.append)
+    try:
+        pipeline.run(cfg, now=T0)
+    finally:
+        progress_mod.set_sink(None)
+
+    kinds = [e["event"] for e in events]
+    # 4 段すべての開始・完了と最終完了イベントが出る。
+    for stage in ("capture", "preprocess", "ocr", "build"):
+        assert {"event": "stage_start", "stage": stage} in events
+        assert {"event": "stage_complete", "stage": stage} in events
+    assert kinds[-1] == "complete"
+    assert events[-1]["output"].endswith(f"{cfg.book_title}.pdf")
+    # ページ単位イベントが段名・ページ番号・総数を含む（preprocess/ocr は総数既知）。
+    ocr_pages = [e for e in events if e["event"] == "page" and e["stage"] == "ocr"]
+    assert ocr_pages[-1] == {"event": "page", "stage": "ocr", "page": 2, "total": 2}
+
+
+def test_run_emits_error_event_on_stage_failure(tmp_path, monkeypatch):
+    """段の失敗時に error イベント（段名・メッセージ）を発火してから送出する（#32）。"""
+    from kindle2pdf import progress as progress_mod
+
+    monkeypatch.chdir(tmp_path)
+    cfg = _single_page_config(tmp_path)
+
+    def boom(cfg, state, work_dir, state_path):
+        raise RuntimeError("Kindle ウィンドウが見つかりません")
+
+    monkeypatch.setattr(pipeline.capture, "run_capture", boom)
+
+    events: list[dict] = []
+    progress_mod.set_sink(events.append)
+    try:
+        with pytest.raises(RuntimeError):
+            pipeline.run(cfg, now=T0)
+    finally:
+        progress_mod.set_sink(None)
+
+    error_events = [e for e in events if e["event"] == "error"]
+    assert len(error_events) == 1
+    assert error_events[0]["stage"] == "capture"
+    assert "Kindle ウィンドウ" in error_events[0]["message"]
+
+
 def test_two_runs_create_separate_dirs(tmp_path, monkeypatch):
     """2回連続で実行しても互いに上書きせず別ディレクトリになる（破壊的削除が不要・#31）。"""
     monkeypatch.chdir(tmp_path)

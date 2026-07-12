@@ -72,6 +72,24 @@ def test_validate_skips_region_when_auto():
     cfg.validate()  # 例外が出なければ OK
 
 
+@pytest.mark.parametrize("bad", ["a/b", "..", ".", "\\x", "", "../escape", "sub/dir"])
+def test_validate_rejects_unsafe_book_title(bad):
+    """book_title のパス区切り・相対参照・空文字を弾く（work/ 外エスケープ防止・#32）。"""
+    cfg = Config()
+    cfg.capture.auto_region = True  # region 検証を飛ばして book_title 検証を切り分ける
+    cfg.book_title = bad
+    with pytest.raises(ValueError):
+        cfg.validate()
+
+
+def test_validate_accepts_safe_book_title():
+    """区切り文字を含まない通常の書名は通る。"""
+    cfg = Config()
+    cfg.capture.auto_region = True
+    cfg.book_title = "吾輩は猫である_上巻"
+    cfg.validate()  # 例外が出なければ OK
+
+
 def test_state_roundtrip(tmp_path):
     st = State(book_title="b", stage="ocr", captured=42, ocr_done=30)
     p = tmp_path / "state.json"

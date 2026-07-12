@@ -18,7 +18,7 @@ from pathlib import Path
 
 from PIL import Image, ImageStat
 
-from . import naming
+from . import naming, progress
 from .config import Config
 from .state import State
 
@@ -146,6 +146,8 @@ def process_all(
         state.pages_total = page_no
         if state_path is not None:
             state.save(state_path)
+        # 総数は入力 raw 枚数（分母）。進捗は消化済み raw 数（idx+1）で出す。
+        progress.emit("page", stage="preprocess", page=idx + 1, total=len(raw_paths))
 
     state.pages_total = page_no
     if state_path is not None:
