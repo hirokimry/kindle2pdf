@@ -106,6 +106,11 @@ def capture(config: str) -> None:
         run_dir = resolve_run_dir(cfg)
         state_path = run_dir / "state.json"
         st = State.load(state_path)
+        # run 同様、run_capture が最初の state.save に到達する前（Kindle 未起動等）に
+        # 落ちても、この run が次回 resolve_run_dir で再開対象になるよう初期 state を
+        # 即時永続化する。これがないと capture 単体経由で空 run ディレクトリが積み上がる（#31）。
+        if not state_path.exists():
+            st.save(state_path)
         capture_mod.run_capture(cfg, st, run_dir, state_path)
 
 

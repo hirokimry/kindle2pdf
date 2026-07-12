@@ -171,6 +171,36 @@ def test_cli_capture_runtimeerror_is_friendly(tmp_path, monkeypatch):
     assert "Quartz" in result.output
 
 
+def test_cli_capture_failure_leaves_resumable_run_dir(tmp_path, monkeypatch):
+    """capture 単体コマンドも state 保存前に落ちて空 run ディレクトリを積み上げない（#31）。"""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config.yaml").write_text(
+        "book_title: t\ncapture:\n  auto_region: false\n  region: [0, 0, 400, 560]\n",
+        encoding="utf-8",
+    )
+    import kindle2pdf.pipeline as pipeline_mod
+
+    def boom(cfg, st, wd, state_path):
+        # 最初の state.save 到達前にウィンドウ検出が失敗する初回撮影を模す。
+        raise RuntimeError("Kindle ウィンドウが見つかりません")
+
+    monkeypatch.setattr(capture_mod, "run_capture", boom)
+
+    result1 = CliRunner().invoke(main, ["capture", "--config", "config.yaml"])
+    assert result1.exit_code != 0
+
+    from kindle2pdf.config import Config
+    bdir = pipeline_mod.book_dir(Config(book_title="t"))
+    first_dirs = pipeline_mod._run_dirs(bdir)
+    assert len(first_dirs) == 1
+    assert (first_dirs[0] / "state.json").exists()  # 初期 state が残っている
+
+    # 2回目も同じ失敗。resume で同一ディレクトリを再開し新規を作らない。
+    result2 = CliRunner().invoke(main, ["capture", "--config", "config.yaml"])
+    assert result2.exit_code != 0
+    assert pipeline_mod._run_dirs(bdir) == first_dirs  # ディレクトリが増えていない
+
+
 def test_cli_config_load_error_is_friendly(tmp_path, monkeypatch):
     """config 読込時の廃止キー ValueError も生 traceback でなく明確なエラーで返す。"""
     monkeypatch.chdir(tmp_path)
