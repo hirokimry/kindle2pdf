@@ -33,6 +33,8 @@ export function validateTitle(value) {
   if (v === "") return "タイトルを入力してください";
   if (/[\\/]/.test(v)) return "タイトルに / や \\ は使えません";
   if (v === "." || v === "..") return "タイトルに . や .. は使えません";
+  // null byte はコア Config.validate() も弾く。パス操作を壊す不正文字として拒否する。
+  if (v.includes("\x00")) return "タイトルに不正な文字が含まれます";
   return undefined;
 }
 
@@ -50,8 +52,10 @@ export function buildCoreArgs({ title, layout, open = true, progress = "json", c
   if (configPath) args.push("--config", configPath);
   // 検証（validateTitle）と一致させて trim 済みの値を渡す。前後空白付き（"  猫  "）で
   // work/  猫  / のようなフォルダ名にならないようにする（#34）。
+  // 値は --title=<値> の単一トークンで渡す。"-1" のような - 始まりの書名でも click が
+  // 次トークンを別オプションと誤認しない（別トークンだと "requires an argument" になる）。
   const trimmedTitle = title == null ? "" : String(title).trim();
-  if (trimmedTitle !== "") args.push("--title", trimmedTitle);
+  if (trimmedTitle !== "") args.push(`--title=${trimmedTitle}`);
   const ro = readingOrderFor(layout);
   if (ro) args.push("--reading-order", ro);
   args.push("--progress", progress);
