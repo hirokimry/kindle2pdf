@@ -179,6 +179,19 @@ def test_resolve_run_dir_new_when_all_complete(tmp_path, monkeypatch):
     assert resolved.is_dir()
 
 
+def test_resolve_run_dir_suffixes_on_same_timestamp_collision(tmp_path, monkeypatch):
+    """同一秒に衝突したら -02 のゼロ埋め連番で退避する（辞書順=時刻順を保つ・#31）。"""
+    monkeypatch.chdir(tmp_path)
+    cfg = _single_page_config(tmp_path)
+
+    first = pipeline.resolve_run_dir(cfg, resume=False, now=T0)
+    # 同じ now で 2 回目 → 既存ディレクトリと衝突し -02 サフィックスで退避する。
+    second = pipeline.resolve_run_dir(cfg, resume=False, now=T0)
+
+    assert second == first.parent / f"{first.name}-02"
+    assert first.is_dir() and second.is_dir()
+
+
 def test_resolve_run_dir_resume_false_forces_new(tmp_path, monkeypatch):
     """resume=False は未完了 run があっても新規ディレクトリを作る（#31）。"""
     monkeypatch.chdir(tmp_path)
