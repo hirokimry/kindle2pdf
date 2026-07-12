@@ -405,6 +405,28 @@ def test_run_capture_auto_region_wires_window_id_and_crop(monkeypatch, tmp_path)
     assert cropped and all(f == pytest.approx(28 / 919) for f in cropped)
 
 
+def test_run_capture_auto_region_refollows_resize(monkeypatch, tmp_path):
+    """ページごとにウィンドウを再検出し、途中リサイズ後のクロップ比率に追従する。"""
+    # _auto_region_params が呼ばれるたびに比率が変わる（3回目以降で縮小相当0.05に）。
+    fractions = iter([0.03, 0.03, 0.05, 0.05, 0.05, 0.05])
+    monkeypatch.setattr(
+        capture, "_auto_region_params",
+        lambda app_name: (900, (0, 37, 1470, 919), next(fractions, 0.05)),
+    )
+    cropped = []
+    fake = FakeScreen([(HASH_A, 255), (HASH_B, 255), (HASH_B, 255), (HASH_B, 255), (HASH_B, 255)])
+    monkeypatch.setattr(capture, "grab", fake.grab)
+    monkeypatch.setattr(capture, "turn_page", fake.turn_page)
+    monkeypatch.setattr(imaging, "mean_brightness", fake.mean_brightness)
+    monkeypatch.setattr(imaging, "phash", fake.phash)
+    monkeypatch.setattr(imaging, "crop_top_fraction", lambda p, f: cropped.append(f))
+
+    capture.run_capture(_make_cfg(auto_region=True), State(), tmp_path, tmp_path / "s.json")
+
+    # リサイズ後の比率0.05が実際にクロップに使われている（古い0.03に固定されていない）。
+    assert 0.05 in cropped
+
+
 def test_run_calibrate_auto_returns_crop_adjusted_region(monkeypatch, tmp_path):
     """auto_region の calibrate は window_id で撮り、返す region をクロップ後に補正する。"""
     calls = []

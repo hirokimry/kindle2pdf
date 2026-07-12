@@ -240,6 +240,21 @@ def detect_titlebar_pt(pid: int, window_bounds: tuple[int, int, int, int]) -> fl
     return titlebar_pt
 
 
+def _auto_region_params(
+    app_name: str,
+) -> tuple[int, tuple[int, int, int, int], float]:
+    """auto_region 用に (window_id, ウィンドウ矩形, 上端クロップ比率) を実測して返す。
+
+    クロップ比率 = タイトルバー帯高[pt] ÷ ウィンドウ高[pt]。比率で持つことで retina 倍率に
+    依存せず、ページごとに呼び直せばウィンドウのリサイズ/移動にも追従できる。
+    """
+    window_id, bounds, pid = detect_window_id(app_name)
+    titlebar_pt = detect_titlebar_pt(pid, bounds)
+    win_h = bounds[3]
+    crop_fraction = titlebar_pt / win_h if win_h else 0.0
+    return window_id, bounds, crop_fraction
+
+
 def turn_page(cfg: Config) -> None:
     """右/左矢印キーを送出してページ送りする（osascript / cliclick）。
 
@@ -365,20 +380,18 @@ def run_capture(
     cap = cfg.capture
     raw_dir = Path(work_dir) / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
-    # auto_region: セッション開始時に Kindle ウィンドウ ID を検出し、以降 `-l` で直接撮る。
-    # ウィンドウは移動・別 Space 化し得るため実行時に毎回検出する（ID はセッション毎に変わる）。
-    # タイトルバー帯の高さも開始時に一度だけ AX で実測し、比率クロップに使い回す
-    # （セッション中は帯高が変わらないため毎フレーム再検出しない）。
+    # auto_region: 実行時に Kindle ウィンドウを検出し `-l` で直接撮る。ウィンドウは移動・別
+    # Space 化・リサイズし得るため **ページごとに再検出** し、クロップ比率(帯高÷ウィンドウ高)を
+    # 毎回最新化する。セッション中に一度だけ算出して使い回すと、リサイズ時に比率がずれて
+    # 枠が写る／余白を削る事故になるため（帯高は pt 不変でも比率は高さに依存する）。
     window_id = None
     crop_fraction = 0.0
+    last_bounds = None
     if cap.auto_region:
-        window_id, bounds, pid = detect_window_id(cap.app_name)
-        titlebar_pt = detect_titlebar_pt(pid, bounds)
-        win_h = bounds[3]
-        crop_fraction = titlebar_pt / win_h if win_h else 0.0
+        window_id, last_bounds, crop_fraction = _auto_region_params(cap.app_name)
         logger.info(
-            "ウィンドウ自動検出: id=%s 矩形=%s タイトルバー=%.1fpt（上端のみクロップ・本文余白は保全）",
-            window_id, bounds, titlebar_pt,
+            "ウィンドウ自動検出: id=%s 矩形=%s（上端タイトルバーのみクロップ・本文余白は保全）",
+            window_id, last_bounds,
         )
     # 一時ファイルは raw/ の外（work_dir 直下）かつ非ドットファイルにする。
     # macOS の screencapture はドットファイル（.pending.png）に書けず、
@@ -392,6 +405,14 @@ def run_capture(
 
     try:
         while state.captured < cap.max_pages:
+            if cap.auto_region:
+                # リサイズ/移動に追従してクロップ比率を最新化する（枠の写り込み・余白削りを防ぐ）。
+                window_id, bounds, crop_fraction = _auto_region_params(cap.app_name)
+                if bounds != last_bounds:
+                    logger.info(
+                        "ウィンドウ変化を検出: 矩形=%s に追従しクロップ比率を再算出しました", bounds
+                    )
+                    last_bounds = bounds
             h = _grab_confirmed(cfg, pending, window_id, crop_fraction)
 
             if prev_hash is not None and imaging.is_same(h, prev_hash, cap.same_threshold):
