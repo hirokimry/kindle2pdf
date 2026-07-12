@@ -123,6 +123,23 @@ class Config:
 
     def validate(self) -> None:
         """最低限の妥当性検証。region 未実測などをここで弾く。"""
+        # book_title は work/<book_title>/<日時>/ のディレクトリ名になる。パス区切りや
+        # 相対参照を含むと work/ の外に run ディレクトリが作られ既存ファイルを上書きしうる。
+        # --title でフロント（npx kindle2pdf）の回答が直接渡るため、想定外タイトルを明確な
+        # エラーで弾く（誤入力・"/" を含む書名対策。Issue #32）。
+        title = self.book_title
+        if (
+            not title
+            or "/" in title
+            or "\\" in title
+            or "\x00" in title
+            or title in (".", "..")
+        ):
+            raise ValueError(
+                "book_title にパス区切り（/ \\）・相対参照（. ..）・空文字は使えません。"
+                "work/<book_title>/ のフォルダ名になるため、書名にこれらが含まれる場合は "
+                "「_」等へ置き換えてください。"
+            )
         # auto_region 時は実行時にウィンドウから領域を算出するため静的 region 検証は不要。
         if not self.capture.auto_region:
             validate_region(self.capture.region)

@@ -131,6 +131,27 @@ def test_run_progress_json_emits_json_lines(tmp_path, monkeypatch):
     assert events[0]["event"] == "stage_start"
 
 
+def test_run_rejects_unsafe_title_with_friendly_error(tmp_path, monkeypatch):
+    """--title にパス区切りを渡すと生 traceback でなく明確なエラーで止まる（#32）。
+
+    pipeline.run はスタブせず実物を通す（Config.validate が撮影前に book_title を弾く）。
+    validate は純粋関数で Kindle 実機に依存しない。
+    """
+    monkeypatch.chdir(tmp_path)
+    _write_config(tmp_path)
+    opened: list[str] = []
+    monkeypatch.setattr(cli, "_open_file", lambda path: opened.append(path))
+
+    result = CliRunner().invoke(
+        main, ["run", "--config", "config.yaml", "--title", "../escape"]
+    )
+
+    assert result.exit_code != 0
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "book_title" in result.output  # ClickException 経由の整形メッセージ
+    assert opened == []  # 失敗時は自動オープンしない
+
+
 def test_run_default_progress_text_emits_no_json(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _write_config(tmp_path)
