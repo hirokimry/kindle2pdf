@@ -48,7 +48,10 @@ export function readingOrderFor(layoutValue) {
 export function buildCoreArgs({ title, layout, open = true, progress = "json", configPath } = {}) {
   const args = ["run"];
   if (configPath) args.push("--config", configPath);
-  if (title != null && String(title).trim() !== "") args.push("--title", String(title));
+  // 検証（validateTitle）と一致させて trim 済みの値を渡す。前後空白付き（"  猫  "）で
+  // work/  猫  / のようなフォルダ名にならないようにする（#34）。
+  const trimmedTitle = title == null ? "" : String(title).trim();
+  if (trimmedTitle !== "") args.push("--title", trimmedTitle);
   const ro = readingOrderFor(layout);
   if (ro) args.push("--reading-order", ro);
   args.push("--progress", progress);
