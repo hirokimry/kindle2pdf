@@ -1,31 +1,42 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { test } from "node:test";
+import { after, test } from "node:test";
 
 // 配布エントリ cli/index.mjs を実際に node で実行し、passthrough 経路が Python コアを
 // `-m kindle2pdf <引数>` で起動することを検証する（import typo・結線バグを CI で検知する）。
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ENTRY = join(HERE, "..", "index.mjs");
 
-// KINDLE2PDF_PYTHON に差し込むフェイク Python。受け取った argv を STDOUT に出して終了する。
-function makeFakePython() {
+// 作成した temp ディレクトリを追跡し、テスト終了後に一括削除する（/tmp への蓄積を防ぐ）。
+const tmpDirs = [];
+after(() => {
+  for (const d of tmpDirs) {
+    try {
+      rmSync(d, { recursive: true, force: true });
+    } catch {
+      /* 後片付け失敗は結果に影響させない */
+    }
+  }
+});
+
+// KINDLE2PDF_PYTHON に差し込むフェイク Python を temp に作って返す。body で挙動を差し替える。
+function makeFakePython(body) {
   const dir = mkdtempSync(join(tmpdir(), "k2p-fakepy-"));
+  tmpDirs.push(dir);
   const fake = join(dir, "fakepy.mjs");
-  writeFileSync(
-    fake,
-    '#!/usr/bin/env node\nprocess.stdout.write("CORE_ARGV: " + process.argv.slice(2).join(" ") + "\\n");\n',
-    "utf8",
-  );
+  writeFileSync(fake, `#!/usr/bin/env node\n${body}\n`, "utf8");
   chmodSync(fake, 0o755);
   return fake;
 }
 
 test("passthrough: 引数ありは -m kindle2pdf に引数を素通しでコアを起動する", () => {
-  const fake = makeFakePython();
+  const fake = makeFakePython(
+    'process.stdout.write("CORE_ARGV: " + process.argv.slice(2).join(" ") + "\\n");',
+  );
   const res = spawnSync("node", [ENTRY, "run", "--config", "config.yaml"], {
     env: { ...process.env, KINDLE2PDF_PYTHON: fake },
     encoding: "utf8",
@@ -45,10 +56,7 @@ test("passthrough: Python コアが起動できないとき明確なエラーを
 });
 
 test("passthrough: コアの終了コードをそのまま伝播する", () => {
-  const dir = mkdtempSync(join(tmpdir(), "k2p-fakepy-"));
-  const fake = join(dir, "fakepy.mjs");
-  writeFileSync(fake, "#!/usr/bin/env node\nprocess.exit(3);\n", "utf8");
-  chmodSync(fake, 0o755);
+  const fake = makeFakePython("process.exit(3);");
   const res = spawnSync("node", [ENTRY, "run"], {
     env: { ...process.env, KINDLE2PDF_PYTHON: fake },
     encoding: "utf8",
@@ -57,11 +65,8 @@ test("passthrough: コアの終了コードをそのまま伝播する", () => {
 });
 
 test("passthrough: コアがシグナルで死んだら成功扱いにしない（非ゼロ終了）", () => {
-  const dir = mkdtempSync(join(tmpdir(), "k2p-fakepy-"));
-  const fake = join(dir, "fakepy.mjs");
   // 自分自身を SIGTERM で殺す → Node は close(code=null, signal="SIGTERM") を渡す。
-  writeFileSync(fake, '#!/usr/bin/env node\nprocess.kill(process.pid, "SIGTERM");\n', "utf8");
-  chmodSync(fake, 0o755);
+  const fake = makeFakePython('process.kill(process.pid, "SIGTERM");');
   const res = spawnSync("node", [ENTRY, "run"], {
     env: { ...process.env, KINDLE2PDF_PYTHON: fake },
     encoding: "utf8",
