@@ -17,6 +17,7 @@ from kindle2pdf.config import Config, validate_region
 
 def _cfg(region: list) -> Config:
     cfg = Config()
+    cfg.capture.auto_region = False  # 静的 region 経路を検証する
     cfg.capture.region = region
     return cfg
 
@@ -95,7 +96,8 @@ def test_cli_calibrate_success(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     # 生の値が float でも表示は int 正規化後の region になることを確認する。
     (tmp_path / "config.yaml").write_text(
-        "book_title: t\ncapture:\n  region: [1.9, 2, 300, 400]\n", encoding="utf-8"
+        "book_title: t\ncapture:\n  auto_region: false\n  region: [1.9, 2, 300, 400]\n",
+        encoding="utf-8",
     )
     monkeypatch.setattr(
         capture_mod, "grab", lambda region, out_path: Path(out_path).write_bytes(b"x")
@@ -109,10 +111,86 @@ def test_cli_calibrate_success(tmp_path, monkeypatch):
     assert (tmp_path / "work" / "t" / "calibrate.png").exists()
 
 
+def test_cli_calibrate_auto_region_runtimeerror_is_friendly(tmp_path, monkeypatch):
+    """auto_region の検出失敗(RuntimeError)を生 traceback でなく明確なエラーで返す。"""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config.yaml").write_text(
+        "book_title: t\ncapture:\n  auto_region: true\n", encoding="utf-8"
+    )
+
+    def boom(cfg, work_dir):
+        # Kindle 未起動・アクセシビリティ権限未付与など初回失敗を模す。
+        raise RuntimeError("AX で信号機ボタンを検出できませんでした")
+
+    monkeypatch.setattr(capture_mod, "run_calibrate", boom)
+
+    result = CliRunner().invoke(main, ["calibrate", "--config", "config.yaml"])
+
+    assert result.exit_code != 0
+    # ClickException 経由の整形メッセージであること（生 traceback でない）。
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "信号機ボタン" in result.output
+
+
+def test_cli_run_runtimeerror_is_friendly(tmp_path, monkeypatch):
+    """run コマンドも検出失敗(RuntimeError)を明確なエラーで返す（生 traceback にしない）。"""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config.yaml").write_text(
+        "book_title: t\ncapture:\n  auto_region: true\n", encoding="utf-8"
+    )
+    import kindle2pdf.pipeline as pipeline_mod
+
+    def boom(cfg, state_path):
+        raise RuntimeError("Kindle ウィンドウが見つかりません")
+
+    monkeypatch.setattr(pipeline_mod, "run", boom)
+
+    result = CliRunner().invoke(main, ["run", "--config", "config.yaml"])
+
+    assert result.exit_code != 0
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "Kindle ウィンドウ" in result.output
+
+
+def test_cli_capture_runtimeerror_is_friendly(tmp_path, monkeypatch):
+    """capture コマンドも検出失敗(RuntimeError)を明確なエラーで返す（生 traceback にしない）。"""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config.yaml").write_text(
+        "book_title: t\ncapture:\n  auto_region: true\n", encoding="utf-8"
+    )
+
+    def boom(cfg, st, wd, state_path):
+        raise RuntimeError("Quartz が利用できません")
+
+    monkeypatch.setattr(capture_mod, "run_capture", boom)
+
+    result = CliRunner().invoke(main, ["capture", "--config", "config.yaml"])
+
+    assert result.exit_code != 0
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "Quartz" in result.output
+
+
+def test_cli_config_load_error_is_friendly(tmp_path, monkeypatch):
+    """config 読込時の廃止キー ValueError も生 traceback でなく明確なエラーで返す。"""
+    monkeypatch.chdir(tmp_path)
+    # 廃止キー split_spread は Config.load が ValueError を送出する。
+    (tmp_path / "config.yaml").write_text(
+        "book_title: t\npreprocess:\n  split_spread: true\n", encoding="utf-8"
+    )
+
+    result = CliRunner().invoke(main, ["calibrate", "--config", "config.yaml"])
+
+    assert result.exit_code != 0
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "split_spread" in result.output
+
+
 def test_cli_calibrate_invalid_region_errors(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "config.yaml").write_text(
-        "book_title: t\ncapture:\n  region: [0, 0, 0, 0]\n", encoding="utf-8"
+        "book_title: t\ncapture:\n  auto_region: false\n  region: [0, 0, 0, 0]\n",
+        encoding="utf-8",
     )
 
     def boom(*a, **k):

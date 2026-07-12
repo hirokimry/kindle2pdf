@@ -34,6 +34,11 @@ def validate_region(region: list[int]) -> tuple[int, int, int, int]:
 @dataclass
 class CaptureConfig:
     region: list[int] = field(default_factory=lambda: [0, 0, 0, 0])
+    # ウィンドウを自動検出して撮影領域に使うか。true なら静的 region を無視し、毎回 Kindle
+    # ウィンドウを検出して `-l` で撮り、AX 実測の macOS タイトルバー帯だけを上端クロップする
+    # （本文の白余白・柱は一切削らない）。Kindle 自身の進捗フッター等は Kindle の表示設定で
+    # 消す運用。false で静的 region。通常ウィンドウ表示前提（全画面は自動ページ送り不可）。
+    auto_region: bool = True
     # 見開き2ページ表示か（true=左右分割する / false=片ページで分割しない）。
     # 見開き/片ページの切替はこのフラグ 1 つで決まる（preprocess が参照する唯一のスイッチ）。
     spread_mode: bool = True
@@ -106,7 +111,9 @@ class Config:
 
     def validate(self) -> None:
         """最低限の妥当性検証。region 未実測などをここで弾く。"""
-        validate_region(self.capture.region)
+        # auto_region 時は実行時にウィンドウから領域を算出するため静的 region 検証は不要。
+        if not self.capture.auto_region:
+            validate_region(self.capture.region)
         if self.capture.page_turn_key not in ("right", "left"):
             raise ValueError("capture.page_turn_key は right / left のいずれか。")
         fmt = self.build.image_format.lower()

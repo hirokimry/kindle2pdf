@@ -26,6 +26,7 @@ def _make_cfg(**cap_over) -> Config:
     """テスト用 Config（待機0秒・安定確認1回）。"""
     defaults = dict(
         region=[0, 0, 10, 10],
+        auto_region=False,  # テストは静的 region + FakeScreen で撮影経路を検証する
         stable_required=1,
         end_detect_repeats=3,
         same_threshold=2,
@@ -54,7 +55,7 @@ class FakeScreen:
         self.current = None
         self.turns = 0
 
-    def grab(self, region, out_path):
+    def grab(self, region, out_path, window_id=None):
         if self.cycle:
             idx = self.gi % len(self.frames)
         else:
@@ -269,9 +270,9 @@ def test_pending_temp_is_not_dotfile_and_outside_raw(monkeypatch, tmp_path):
     seen = []
     fake = FakeScreen([(HASH_A, 200), (HASH_A, 200), (HASH_A, 200)])
 
-    def rec_grab(region, out_path):
+    def rec_grab(region, out_path, window_id=None):
         seen.append(Path(out_path))
-        return fake.grab(region, out_path)
+        return fake.grab(region, out_path, window_id)
 
     monkeypatch.setattr(capture, "grab", rec_grab)
     monkeypatch.setattr(capture, "turn_page", fake.turn_page)
@@ -294,7 +295,7 @@ def test_run_calibrate_activates_kindle_before_grab(monkeypatch, tmp_path):
         lambda app_name="Kindle": order.append(("activate", app_name)),
     )
 
-    def rec_grab(region, out_path):
+    def rec_grab(region, out_path, window_id=None):
         order.append(("grab", str(out_path)))
         Path(out_path).write_bytes(b"x")
         return str(out_path)
@@ -303,3 +304,160 @@ def test_run_calibrate_activates_kindle_before_grab(monkeypatch, tmp_path):
     capture.run_calibrate(_make_cfg(region=[0, 0, 10, 10], app_name="Amazon Kindle"), tmp_path)
     assert [o[0] for o in order] == ["activate", "grab"]
     assert order[0][1] == "Amazon Kindle"
+
+
+# --- ウィンドウ自動検出（auto_region: -l ウィンドウID撮影）---
+
+
+class _FakeQuartz:
+    """CGWindowListCopyWindowInfo を模した最小スタブ。"""
+
+    kCGWindowListOptionAll = 0
+    kCGNullWindowID = 0
+
+    def __init__(self, windows):
+        self._windows = windows
+
+    def CGWindowListCopyWindowInfo(self, opt, wid):  # noqa: N802
+        return self._windows
+
+
+def test_detect_window_id_picks_largest_layer0_kindle(monkeypatch):
+    """app 名一致・レイヤ0・最大面積のウィンドウを本体 ID として選ぶ。"""
+    windows = [
+        {"kCGWindowOwnerName": "Kindle", "kCGWindowLayer": 0, "kCGWindowNumber": 11,
+         "kCGWindowOwnerPID": 555,
+         "kCGWindowBounds": {"X": 0, "Y": 36, "Width": 1470, "Height": 920}},
+        {"kCGWindowOwnerName": "Kindle", "kCGWindowLayer": 0, "kCGWindowNumber": 22,
+         "kCGWindowOwnerPID": 555,
+         "kCGWindowBounds": {"X": 0, "Y": 0, "Width": 1470, "Height": 36}},   # 小さい補助窓
+        {"kCGWindowOwnerName": "Kindle", "kCGWindowLayer": 26, "kCGWindowNumber": 33,
+         "kCGWindowOwnerPID": 555,
+         "kCGWindowBounds": {"X": 0, "Y": 0, "Width": 1470, "Height": 36}},   # レイヤ0でない
+        {"kCGWindowOwnerName": "Finder", "kCGWindowLayer": 0, "kCGWindowNumber": 44,
+         "kCGWindowOwnerPID": 999,
+         "kCGWindowBounds": {"X": 0, "Y": 0, "Width": 9999, "Height": 9999}},  # 別アプリ
+    ]
+    monkeypatch.setattr(capture, "Quartz", _FakeQuartz(windows))
+    wid, rect, pid = capture.detect_window_id("Amazon Kindle")
+    assert wid == 11
+    assert rect == (0, 36, 1470, 920)
+    assert pid == 555  # AX でタイトルバーを実測するため本体ウィンドウの PID を返す
+
+
+def test_detect_window_id_warns_on_multiple_candidates(monkeypatch, caplog):
+    """Kindle ウィンドウが複数見つかったら警告を出す（誤ウィンドウのサイレント撮影を防ぐ）。"""
+    windows = [
+        {"kCGWindowOwnerName": "Kindle", "kCGWindowLayer": 0, "kCGWindowNumber": 11,
+         "kCGWindowOwnerPID": 555,
+         "kCGWindowBounds": {"X": 0, "Y": 36, "Width": 1470, "Height": 920}},
+        {"kCGWindowOwnerName": "Kindle", "kCGWindowLayer": 0, "kCGWindowNumber": 22,
+         "kCGWindowOwnerPID": 555,
+         "kCGWindowBounds": {"X": 0, "Y": 36, "Width": 800, "Height": 600}},  # 2冊目/パネル
+    ]
+    monkeypatch.setattr(capture, "Quartz", _FakeQuartz(windows))
+    import logging
+    with caplog.at_level(logging.WARNING):
+        wid, rect, pid = capture.detect_window_id("Amazon Kindle")
+    assert wid == 11  # 面積最大を本体に選ぶ
+    assert any("面積最大" in r.getMessage() for r in caplog.records)
+
+
+def test_detect_window_id_raises_when_no_kindle(monkeypatch):
+    """Kindle ウィンドウが無ければ明確なエラーを出す。"""
+    monkeypatch.setattr(capture, "Quartz", _FakeQuartz([]))
+    with pytest.raises(RuntimeError, match="見つかりません"):
+        capture.detect_window_id("Amazon Kindle")
+
+
+def _one_kindle_window(number=900, pid=42, bounds=(0, 37, 1470, 919)):
+    x, y, w, h = bounds
+    return [{
+        "kCGWindowOwnerName": "Kindle", "kCGWindowLayer": 0, "kCGWindowNumber": number,
+        "kCGWindowOwnerPID": pid,
+        "kCGWindowBounds": {"X": x, "Y": y, "Width": w, "Height": h},
+    }]
+
+
+def test_run_capture_auto_region_wires_window_id_and_crop(monkeypatch, tmp_path):
+    """auto_region=True（既定経路）で window_id と crop 比率が grab / crop まで配線される。"""
+    grabbed, cropped = [], []
+
+    def rec_grab(region, out_path, window_id=None):
+        grabbed.append(window_id)
+        Path(out_path).write_bytes(b"x")
+        return str(out_path)
+
+    monkeypatch.setattr(capture, "Quartz", _FakeQuartz(_one_kindle_window()))
+    monkeypatch.setattr(capture, "detect_titlebar_pt", lambda pid, bounds: 28.0)
+    monkeypatch.setattr(capture, "grab", rec_grab)
+    monkeypatch.setattr(imaging, "crop_top_fraction", lambda p, f: cropped.append(f))
+    monkeypatch.setattr(imaging, "mean_brightness", lambda p: 200)
+    monkeypatch.setattr(imaging, "phash", lambda p: imagehash.hex_to_hash(HASH_A))
+    monkeypatch.setattr(capture, "turn_page", lambda cfg: None)
+
+    capture.run_capture(
+        _make_cfg(auto_region=True, app_name="Amazon Kindle"),
+        State(), tmp_path, tmp_path / "state.json",
+    )
+    # 検出した window_id で全フレーム撮影し、毎フレーム 28/919 の比率でクロップした。
+    assert grabbed and all(wid == 900 for wid in grabbed)
+    assert cropped and all(f == pytest.approx(28 / 919) for f in cropped)
+
+
+def test_run_capture_auto_region_refollows_resize(monkeypatch, tmp_path):
+    """ページごとにウィンドウを再検出し、途中リサイズ後のクロップ比率に追従する。"""
+    # _auto_region_params が呼ばれるたびに比率が変わる（3回目以降で縮小相当0.05に）。
+    fractions = iter([0.03, 0.03, 0.05, 0.05, 0.05, 0.05])
+    monkeypatch.setattr(
+        capture, "_auto_region_params",
+        lambda app_name: (900, (0, 37, 1470, 919), next(fractions, 0.05)),
+    )
+    cropped = []
+    fake = FakeScreen([(HASH_A, 255), (HASH_B, 255), (HASH_B, 255), (HASH_B, 255), (HASH_B, 255)])
+    monkeypatch.setattr(capture, "grab", fake.grab)
+    monkeypatch.setattr(capture, "turn_page", fake.turn_page)
+    monkeypatch.setattr(imaging, "mean_brightness", fake.mean_brightness)
+    monkeypatch.setattr(imaging, "phash", fake.phash)
+    monkeypatch.setattr(imaging, "crop_top_fraction", lambda p, f: cropped.append(f))
+
+    capture.run_capture(_make_cfg(auto_region=True), State(), tmp_path, tmp_path / "s.json")
+
+    # リサイズ後の比率0.05が実際にクロップに使われている（古い0.03に固定されていない）。
+    assert 0.05 in cropped
+
+
+def test_run_calibrate_auto_returns_crop_adjusted_region(monkeypatch, tmp_path):
+    """auto_region の calibrate は window_id で撮り、返す region をクロップ後に補正する。"""
+    calls = []
+
+    def rec_grab(region, out_path, window_id=None):
+        calls.append(window_id)
+        Path(out_path).write_bytes(b"x")
+        return str(out_path)
+
+    monkeypatch.setattr(capture, "Quartz", _FakeQuartz(_one_kindle_window()))
+    monkeypatch.setattr(capture, "detect_titlebar_pt", lambda pid, bounds: 28.0)
+    monkeypatch.setattr(capture, "grab", rec_grab)
+    monkeypatch.setattr(imaging, "crop_top_fraction", lambda p, f: None)
+
+    out_path, region = capture.run_calibrate(
+        _make_cfg(auto_region=True, app_name="Amazon Kindle"), tmp_path
+    )
+    assert calls == [900]                          # window_id で直接撮った
+    assert region == (0, 37 + 28, 1470, 919 - 28)  # 上端クロップぶん y を下げ h を縮めた
+
+
+def test_grab_uses_window_id_flag(monkeypatch):
+    """window_id 指定時は screencapture -l <id> でウィンドウを直接撮る（-R を使わない）。"""
+    calls = {}
+    import subprocess as sp
+
+    def fake_run(cmd, check):
+        calls["cmd"] = cmd
+        Path(cmd[-1]).write_bytes(b"x")
+
+    monkeypatch.setattr(sp, "run", fake_run)
+    capture.grab(None, "/tmp/x.png", window_id=79362)
+    assert "-l" in calls["cmd"] and "79362" in calls["cmd"]
+    assert not any(str(c).startswith("-R") for c in calls["cmd"])

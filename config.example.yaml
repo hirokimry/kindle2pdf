@@ -3,7 +3,8 @@
 book_title: "sample-book"
 
 capture:
-  region: [0, 0, 0, 0]            # [x, y, w, h] screencapture -R の値。calibrate で実測
+  auto_region: true               # true=Kindleウィンドウを自動検出→ screencapture -l で撮り、AX実測のタイトルバー帯だけ上端クロップ（推奨/前面化不要・本文余白を削らない・通常ウィンドウ前提）。false で下の静的 region
+  region: [0, 0, 0, 0]            # auto_region=false 時のみ使用。[x, y, w, h] を calibrate で実測
   app_name: "Kindle"              # Kindle の AppleScript 名。新しめの Mac 版は "Amazon Kindle"
   spread_mode: true               # true=見開き両ページ（左右分割する） / false=片ページ（分割しない）
   page_turn_key: "right"          # right(key code 124) / left(123)。右綴じ本は要確認

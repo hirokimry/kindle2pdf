@@ -8,11 +8,27 @@
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
 
 import click
 
 from .config import Config
 from .state import State
+
+
+@contextmanager
+def _friendly_errors():
+    """ドメイン例外を CLI の明確なエラー（exit 1 + メッセージ）に変換する。
+
+    Why: auto_region 経路は Kindle 未起動・アクセシビリティ権限未付与・ウィンドウ不検出
+    などを RuntimeError で送出する（初回実行で最も起きやすい失敗）。生の traceback ではなく
+    click のエラーメッセージで返し、「誤クロップより明確なエラーで止める」設計を CLI 層でも守る。
+    region 未設定などの ValueError も同様に扱う。
+    """
+    try:
+        yield
+    except (ValueError, RuntimeError) as e:
+        raise click.ClickException(str(e)) from e
 
 
 def _setup_logging() -> None:
@@ -45,12 +61,11 @@ def calibrate(config: str) -> None:
     from . import capture as capture_mod
     from .pipeline import work_dir
 
-    cfg = _load(config)
-    try:
+    with _friendly_errors():
+        # config 読込(廃止キー等の ValueError)・region 未設定・auto_region の検出失敗
+        # (RuntimeError)を、全て明確なエラーで返す（生 traceback にしない）。
+        cfg = _load(config)
         out_path, region = capture_mod.run_calibrate(cfg, work_dir(cfg))
-    except ValueError as e:
-        # region 未設定・不正は利用者に明確なエラーとして返す（click が exit 1）。
-        raise click.ClickException(str(e)) from e
     x, y, w, h = region
     # 生の config 値ではなく実際に撮影に使った正規化済み region を表示する。
     click.echo(f"✅ region [{x}, {y}, {w}, {h}] を 1 枚撮影しました。")
@@ -65,7 +80,8 @@ def run(config: str, state_path: str) -> None:
     """capture→preprocess→ocr→build を全自動実行（レジューム対応）。[P7]"""
     from .pipeline import run as run_pipeline
 
-    run_pipeline(_load(config), state_path)
+    with _friendly_errors():
+        run_pipeline(_load(config), state_path)
 
 
 @main.command()
@@ -76,10 +92,12 @@ def capture(config: str, state_path: str) -> None:
     from . import capture as capture_mod
     from .pipeline import work_dir
 
-    cfg = _load(config)
-    cfg.validate()
-    st = State.load(state_path)
-    capture_mod.run_capture(cfg, st, work_dir(cfg), state_path)
+    with _friendly_errors():
+        # config 読込・検証・撮影の各段が投げるドメイン例外を明確なエラーで返す。
+        cfg = _load(config)
+        cfg.validate()
+        st = State.load(state_path)
+        capture_mod.run_capture(cfg, st, work_dir(cfg), state_path)
 
 
 if __name__ == "__main__":

@@ -33,8 +33,16 @@ def test_load_rejects_retired_split_spread_key(tmp_path):
 
 def test_validate_rejects_unmeasured_region():
     cfg = Config.load(REPO / "config.example.yaml")  # region=[0,0,0,0]
+    cfg.capture.auto_region = False  # 静的 region 運用では未実測を弾く
     with pytest.raises(ValueError):
         cfg.validate()
+
+
+def test_validate_skips_region_when_auto():
+    """auto_region 時は静的 region 未実測でも validate が通る（実行時に自動算出）。"""
+    cfg = Config.load(REPO / "config.example.yaml")  # region=[0,0,0,0]
+    cfg.capture.auto_region = True
+    cfg.validate()  # 例外が出なければ OK
 
 
 def test_state_roundtrip(tmp_path):
