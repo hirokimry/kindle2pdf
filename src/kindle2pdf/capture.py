@@ -47,10 +47,16 @@ _MAX_STABLE_ATTEMPTS = 30
 def run_calibrate(cfg: Config, work_dir: Path) -> tuple[Path, tuple[int, int, int, int]]:
     """region を 1 枚だけ撮影し、(保存先パス, 正規化済み region) を返す。[P1]
 
-    未設定・不正な region は validate_region が明確な ValueError で弾く。
+    2 経路があり、返す region は「実際に撮影に使った領域」に揃えて表示の齟齬を防ぐ。
+
+    - auto_region=True（既定）: ウィンドウを自動検出し `-l` で撮り、AX 実測のタイトルバー帯を
+      上端クロップする。返す region はクロップ後の実撮影領域。Quartz/AX が使えない・Kindle
+      未起動・アクセシビリティ権限未付与・ウィンドウ/信号機ボタン不検出・帯高が異常値のときは
+      RuntimeError を送出する（誤クロップより明確なエラーで止める）。
+    - auto_region=False: Kindle を前面化し静的 region を撮る。未設定・不正な region は
+      validate_region が明確な ValueError で弾く。
+
     撮影後の画像を開けば UI・柱・余白が入らず本文だけが写るかを目視確認できる。
-    正規化済み region を併せて返すことで、呼び出し側が「実際に撮影に使った値」を
-    表示でき、config の生の値（float 等）との齟齬を防ぐ。
     """
     work_dir.mkdir(parents=True, exist_ok=True)
     out_path = work_dir / "calibrate.png"
