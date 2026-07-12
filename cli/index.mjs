@@ -7,23 +7,23 @@
 // 純粋ロジックの単体テストは @clack をインストールせずとも動く。
 
 import { spawn } from "node:child_process";
-import { rmSync } from "node:fs";
-import { dirname } from "node:path";
 
-import { buildCoreArgs, PAGE_LAYOUTS, validateTitle } from "./lib/args.mjs";
-import { ensureConfig } from "./lib/config.mjs";
+import { PAGE_LAYOUTS, validateTitle } from "./lib/args.mjs";
+import { runCaptureWithProgress } from "./lib/capture.mjs";
 import { decideMode } from "./lib/mode.mjs";
-import { describeEvent } from "./lib/progress.mjs";
-import { resolvePython, runCore } from "./lib/runner.mjs";
+import { resolvePython } from "./lib/runner.mjs";
 
 // コアの出力をそのまま流す（上級者/CI/非TTY）。装飾せず Python CLI と同じ挙動にする。
 function passthrough(args) {
   return new Promise((resolve) => {
-    const child = spawn(resolvePython(), ["-m", "kindle2pdf", ...args], {
-      stdio: "inherit",
-    });
+    const py = resolvePython();
+    const child = spawn(py, ["-m", "kindle2pdf", ...args], { stdio: "inherit" });
     child.on("close", (code) => resolve(code ?? 0));
-    child.on("error", () => resolve(1));
+    child.on("error", (err) => {
+      // spawn 失敗（python3 不在等）は stdio:inherit でも何も出ないので明示して伝える。
+      process.stderr.write(`kindle2pdf: Python コアを起動できません（${py}）: ${err.message}\n`);
+      resolve(1);
+    });
   });
 }
 
@@ -54,55 +54,17 @@ async function wizard() {
 
   const s = p.spinner();
   s.start("撮影を準備中…");
-  let lastOutput = "";
-  let errorMessage = "";
-  // JSON 化されないコアのエラー（book_title 検証・config 読込失敗などは pipeline.run の
-  // 進捗 try の外で起きるため error イベントにならず stderr に出る）も拾って表示する。
-  let stderrTail = "";
-  let code = 1;
-  let configPath = "";
-  let generated = false;
-  try {
-    // config 生成（mkdtemp 失敗等）も含めて try 内に置き、他の失敗経路と同じく
-    // 「撮影に失敗しました」で明確に伝える（未捕捉例外でスタックトレース落ちさせない）。
-    ({ path: configPath, generated } = ensureConfig());
-    const args = buildCoreArgs({ title, layout, configPath, open: true, progress: "json" });
-    ({ code } = await runCore({
-      args,
-      onEvent: (ev) => {
-        const msg = describeEvent(ev);
-        if (msg) s.message(msg);
-        if (ev.event === "complete") lastOutput = ev.output ?? "";
-        if (ev.event === "error") errorMessage = ev.message ?? "";
-      },
-      onStderr: (text) => {
-        // 末尾のみ保持（大量ログでメモリを食わない）。失敗時の原因表示に使う。
-        stderrTail = (stderrTail + text).slice(-600);
-      },
-    }));
-  } catch (err) {
-    // spawn 失敗（python3 不在など）はここに来る。スタックトレースで落とさず明確に伝える。
-    errorMessage = err && err.message ? err.message : String(err);
-  } finally {
-    // 生成した temp config は撮影後に破棄する（cwd は汚さない）。失敗は無視する。
-    if (generated) {
-      try {
-        rmSync(dirname(configPath), { recursive: true, force: true });
-      } catch {
-        /* 破棄失敗は致命でない（OS の tmp が後で回収する） */
-      }
-    }
-  }
+  // config 生成・撮影・進捗描画・temp 破棄・エラー集約は runCaptureWithProgress に委ねる
+  // （@clack 非依存でテスト可能。wizard() は clack の入出力だけを担う）。
+  const { code, output, error } = await runCaptureWithProgress({ title, layout }, { spinner: s });
 
   if (code === 0) {
     s.stop("✅ 完了");
-    p.outro(lastOutput ? `📄 ${lastOutput} を開きました` : "完了しました");
+    p.outro(output ? `📄 ${output} を開きました` : "完了しました");
     return 0;
   }
   s.stop("❌ 失敗");
-  // error イベント > stderr 末尾 の順で最も具体的な原因を見せる。
-  const detail = errorMessage || stderrTail.trim();
-  p.cancel(detail ? `撮影に失敗しました: ${detail}` : "撮影に失敗しました。ログを確認してください。");
+  p.cancel(error ? `撮影に失敗しました: ${error}` : "撮影に失敗しました。ログを確認してください。");
   return code || 1;
 }
 
