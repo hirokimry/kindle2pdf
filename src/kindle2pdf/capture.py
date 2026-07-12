@@ -123,23 +123,43 @@ def _write_cached_app_name(cache_path: Path, name: str) -> None:
         logger.debug("app_name のキャッシュ書き込みに失敗しました（無視して継続）: %s", cache_path)
 
 
+def _applescript_name_works(name: str) -> bool:
+    """AppleScript がこのアプリ名を解決できる（インストール済みの）か確認する。
+
+    `id of application "<name>"` はアプリを起動せずにバンドル ID を返し、名前が無ければ
+    -1728 で失敗する。detect_window_id はウィンドウ所有者名の末尾語（"Kindle"）で部分一致
+    するため "Amazon Kindle" と "Kindle" を区別できないが、本判定は AppleScript が実際に
+    受け付ける名前かを厳密に確かめる。これにより activate / turn_page に渡して -1728 になる
+    名前を候補から弾ける（#33）。
+    """
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", f'id of application "{name}"'],
+            capture_output=True,
+            text=True,
+        )
+    except OSError:  # 非 macOS など osascript 不在
+        return False
+    return result.returncode == 0
+
+
 def resolve_app_name(
     configured: str | None = None,
     *,
-    detector=None,
+    verifier=None,
     cache_path: Path | None = None,
 ) -> str:
-    """撮影に使う Kindle アプリ名を決めて返す（#33）。
+    """撮影・ページ送りに使う Kindle アプリ名を決めて返す（#33）。
 
     明示指定（configured 非空）があればそれを最優先する。未指定なら
     「キャッシュ済みの名前 → 既定候補（"Amazon Kindle" → "Kindle"）」の順に
-    ウィンドウ検出を試し、最初に見つかった名前を採用してキャッシュする。
-    どの候補でもウィンドウが見つからなければ、次のアクションが分かる明確なエラーで止める
-    （サイレントに誤検出しない）。detector / cache_path はテスト用の注入口。
+    AppleScript で受け付けられる名前かを検証し、最初に通った名前を採用してキャッシュする。
+    どの候補も通らなければ、次のアクションが分かる明確なエラーで止める（サイレントに
+    誤検出しない）。verifier / cache_path はテスト用の注入口。
     """
     if configured:
         return configured
-    detect = detector or detect_window_id
+    verify = verifier or _applescript_name_works
     cpath = cache_path or _app_name_cache_path()
 
     candidates: list[str] = []
@@ -152,17 +172,14 @@ def resolve_app_name(
 
     tried: list[str] = []
     for name in candidates:
-        try:
-            detect(name)
-        except RuntimeError:
-            tried.append(name)
-            continue
-        _write_cached_app_name(cpath, name)
-        return name
+        if verify(name):
+            _write_cached_app_name(cpath, name)
+            return name
+        tried.append(name)
     raise RuntimeError(
-        "Kindle ウィンドウが見つかりません（試した名前: "
+        "Kindle アプリが見つかりません（試した名前: "
         + ", ".join(repr(t) for t in tried)
-        + "）。Kindle を起動し対象の本を開いた状態で再実行してください。"
+        + "）。Kindle を起動して再実行してください。"
         "アプリ名が特殊な場合は config.yaml の capture.app_name に明示してください。"
     )
 
@@ -465,11 +482,11 @@ def run_capture(
     window_id = None
     crop_fraction = 0.0
     last_bounds = None
-    # ページ送りの前面化に使う app_name。auto_region では候補試行で自動決定する（#33）。
-    app_name = cap.app_name
+    # ページ送りの前面化にもウィンドウ検出にも app_name が要るため、auto_region の有無に
+    # よらず先に確定する（未指定なら候補を AppleScript 検証で自動決定・#33）。静的 region
+    # 運用でも turn_page の activate に空文字を渡さないためここで必須。
+    app_name = resolve_app_name(cap.app_name)
     if cap.auto_region:
-        # 未指定なら app_name を候補試行で自動決定し、以降のページはその名前で再検出する（#33）。
-        app_name = resolve_app_name(cap.app_name)
         window_id, last_bounds, crop_fraction = _auto_region_params(app_name)
         logger.info(
             "ウィンドウ自動検出: id=%s 矩形=%s（上端タイトルバーのみクロップ・本文余白は保全）",

@@ -19,6 +19,7 @@ def _cfg(region: list) -> Config:
     cfg = Config()
     cfg.capture.auto_region = False  # 静的 region 経路を検証する
     cfg.capture.region = region
+    cfg.capture.app_name = "Kindle"  # 明示指定で resolve_app_name を短絡（実 osascript を呼ばない）
     return cfg
 
 
