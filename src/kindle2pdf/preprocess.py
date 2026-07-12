@@ -1,9 +1,12 @@
-"""preprocess 段 — 見開き左右分割・トリミング・正規化（バッチ）。
+"""preprocess 段 — トリミング・正規化（バッチ）。
 
 入力: work/<book>/raw/ の撮影生画像
-出力: work/<book>/pages/ の確定ページ（単一カラム・UI無し）
+出力: work/<book>/pages/ の確定ページ（1 撮影 = 1 ページ・UI無し）
 
-実装チケット: P4(見開き分割＋トリミング)
+見開きの左右分割は廃止した（Issue #29）。見開き/片ページは Kindle のウィンドウ幅で
+選ぶため、preprocess は撮影されたウィンドウ中身をそのまま 1 ページとして扱う。
+
+実装チケット: P4(トリミング)
 """
 
 from __future__ import annotations
@@ -20,15 +23,6 @@ from .config import Config
 from .state import State
 
 logger = logging.getLogger(__name__)
-
-
-def split_spread(img: Image.Image) -> list[Image.Image]:
-    """見開き画像を中央で左右2分割する（読み順: 左→右）。"""
-    w, h = img.size
-    mid = w // 2
-    left = img.crop((0, 0, mid, h))
-    right = img.crop((mid, 0, w, h))
-    return [left, right]
 
 
 def trim(img: Image.Image, ratios: dict) -> Image.Image:
@@ -52,18 +46,14 @@ def _mean_brightness(img: Image.Image) -> float:
     return ImageStat.Stat(img.convert("L")).mean[0]
 
 
-def _input_signature(pcfg, spread_mode: bool, raw_paths: list[Path]) -> str:
+def _input_signature(pcfg, raw_paths: list[Path]) -> str:
     """preprocess入力（config + raw集合）の署名を返す。
 
-    分割(spread_mode)/トリミング/黒画面閾値の設定変更、または raw の増減・並び変化が
-    あると署名が変わる。署名が前回と食い違えば pages/ を全再生成する（残留ページ混入を防ぐ）。
-
-    spread_mode は capture 設定由来だが分割の有無を左右するため署名に含める。private
-    ヘルパの依存を狭く保つため Config 全体ではなく bool スカラーだけを受け取る。
+    トリミング/黒画面閾値の設定変更、または raw の増減・並び変化があると署名が変わる。
+    署名が前回と食い違えば pages/ を全再生成する（残留ページ混入を防ぐ）。
     """
     payload = json.dumps(
         {
-            "spread_mode": spread_mode,
             "trim": pcfg.trim or {},
             "min_brightness": pcfg.min_brightness,
             "raw": [p.name for p in raw_paths],
@@ -87,16 +77,16 @@ def process_all(
     state_path: str | Path | None = None,
     force: bool = False,
 ) -> None:
-    """raw/ の全画像を分割・トリミングし pages/ に確定ページとして書き出す。
+    """raw/ の全画像をトリミングし pages/ に確定ページとして書き出す。
 
     処理フロー（各 raw 画像ごと）:
         1. 黒画面異常フレーム除外（min_brightness 未満はスキップ）
-        2. 見開き左右分割（capture.spread_mode が真なら1枚→2カラム、偽なら片ページ）
-        3. 比率トリミングで UI・柱・余白を除去
-        4. `naming.page_filename()`（pages/page_{n:06d}.png）に単一カラム・UI無しで連番出力
+        2. 比率トリミングで UI・柱・余白を除去
+        3. `naming.page_filename()`（pages/page_{n:06d}.png）に UI無しで連番出力
 
-    見開きN枚を分割すると 2N ページになる。分割の有無は cfg.capture.spread_mode、
-    トリミング/黒画面閾値は cfg.preprocess で切替可能。
+    見開きの左右分割は廃止した（Issue #29）。撮影された各画像がそのまま 1 ページになる
+    （raw N 枚 → 黒画面除外を除き N ページ）。見開き/片ページは Kindle のウィンドウ幅で
+    選ぶため preprocess は分割しない。トリミング/黒画面閾値は cfg.preprocess で切替可能。
     処理後の確定ページ数は state.pages_total に記録する。
 
     冪等クリアとレジュームを両立する（仕様 F-8）:
@@ -106,16 +96,13 @@ def process_all(
     state_path 指定時は raw 1枚ごとに state を永続化し、途中Kill後も続きから再開できる。
     """
     pcfg = cfg.preprocess
-    # 見開き分割の可否は「見開き表示で撮ったか」＝撮影された画像の性質なので capture 由来。
-    # capture.spread_mode を唯一のスイッチとし preprocess はそれを参照する（重複設定を排除）。
-    spread_mode = cfg.capture.spread_mode
     wd = Path(work_dir) if work_dir is not None else Path("work") / cfg.book_title
     raw_dir = wd / "raw"
     pages_dir = wd / "pages"
     pages_dir.mkdir(parents=True, exist_ok=True)
 
     raw_paths = sorted(raw_dir.glob("*.png"))
-    sig = _input_signature(pcfg, spread_mode, raw_paths)
+    sig = _input_signature(pcfg, raw_paths)
 
     # 署名一致かつ消化途中なら中断→再実行とみなしてレジューム。それ以外は全再生成。
     resume = (
@@ -148,13 +135,11 @@ def process_all(
             skipped += 1
             logger.warning("黒画面異常のためスキップ: %s", rp.name)
         else:
-            # 見開きなら左右分割、片ページ運用なら分割しない（spread_mode は capture 由来）
-            columns = split_spread(img) if spread_mode else [img]
-            for col in columns:
-                trimmed = trim(col, pcfg.trim or {})
-                page_no += 1
-                out_path = pages_dir / naming.page_filename(page_no)
-                trimmed.save(out_path)
+            # 撮影されたウィンドウ中身をそのまま 1 ページとして確定する（分割しない）
+            trimmed = trim(img, pcfg.trim or {})
+            page_no += 1
+            out_path = pages_dir / naming.page_filename(page_no)
+            trimmed.save(out_path)
 
         # raw 1枚を処理し終えた時点で進捗をコミット（レジューム単位）
         state.preprocess_raw_done = idx + 1

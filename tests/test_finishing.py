@@ -144,7 +144,6 @@ def test_preprocess_logs_progress(tmp_path, caplog):
     """preprocess が print ではなく logger で開始/完了ログを出す。"""
     cfg = Config()
     cfg.book_title = "log-book"
-    cfg.capture.spread_mode = False
     cfg.preprocess.trim = {}
     cfg.preprocess.min_brightness = 0
     wd = tmp_path / "wd"
@@ -164,7 +163,6 @@ def test_pipeline_logs_stage_banners(tmp_path, monkeypatch, caplog):
     cfg = Config()
     cfg.book_title = "banner-book"
     cfg.capture.region = [0, 0, IMG_W, IMG_H]
-    cfg.capture.spread_mode = False
     cfg.preprocess.trim = {}
     cfg.preprocess.min_brightness = 0
 
@@ -225,14 +223,13 @@ def test_page_filename_uses_shared_width():
     # 実装と同じフォーマット式で再計算せず、期待値をリテラルで固定する（実装バグを検出できるように）
     assert naming.page_filename(1) == "page_000001.png"
     assert naming.page_filename(42) == "page_000042.png"
-    assert naming.PAGE_NUM_WIDTH >= 6  # max_pages 既定3000×見開き分割を大きく上回る余裕
+    assert naming.PAGE_NUM_WIDTH >= 6  # max_pages 既定3000（1 撮影 = 1 ページ）を大きく上回る余裕
 
 
 def test_preprocess_emits_padded_page_names(tmp_path):
     """preprocess が共通ヘルパーの桁で pages/ を採番する（辞書順ソート担保）。"""
     cfg = Config()
     cfg.book_title = "pad-book"
-    cfg.capture.spread_mode = False
     cfg.preprocess.trim = {}
     cfg.preprocess.min_brightness = 0
     wd = tmp_path / "wd"

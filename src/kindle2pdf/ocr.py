@@ -1,7 +1,10 @@
 """ocr 段 — Apple Vision OCR ラッパ（ocrmac）とバッチ処理。
 
 PoC根拠: Visionは余分な空白がほぼ無く（0.01/字）、日本語の語句検索が壊れない。
-分割済みページは単一カラムなので読み順は「yの大きい順（＝上から）」で単純ソート。
+
+見開きの左右分割を廃止した（Issue #29）ため、1 ページが 2 カラム（見開き）になり得る。
+Vision の生の返り順は左右カラムを行単位で交互に拾い読み順が破綻し得るので、
+`order_reading_items()` で列認識してから読み順に並べ替える。
 
 ocrmac は macOS 専用（extra: macos）。import は関数内で遅延させ、
 非mac環境（CI ubuntu 等）でモジュール import 自体は失敗しないようにする。
@@ -31,8 +34,48 @@ PAGE_IMAGE_EXTS = (".png", ".jpg", ".jpeg")
 _PROGRESS_EVERY = 25
 
 
+def order_reading_items(items: list[OcrItem], reading_order: str = "rtl") -> list[OcrItem]:
+    """OCR結果を読み順に並べ替える（見開き2カラムでも読み順が破綻しないように）。
+
+    座標は正規化(0..1)・原点左下（bbox=[x, y, w, h]）。
+
+    Why: 見開き分割廃止（Issue #29）で 1 ページが 2 カラムになり得る。中央に縦の谷間
+    （どの bbox も中心線 x=0.5 をまたがない）があれば 2 カラムと判定し、左右の列に分けて
+    各列を上→下に並べ、列同士を reading_order の向きで連結する。中心線をまたぐ全幅行が
+    1 つでもあれば片ページ（単一カラム）とみなし、全体を上→下ソートするだけにする
+    （片ページを誤って左右に割ると読み順が壊れるため）。
+
+    reading_order: rtl=右列→左列（漫画・縦書き見開き） / ltr=左列→右列（横書き）。
+    """
+    if len(items) <= 1:
+        return list(items)
+
+    def _top_key(it: OcrItem) -> tuple[float, float]:
+        # 上から下（原点左下なので y 大 = 上）。同 y は左優先で安定化する。
+        _text, _conf, (x, y, _w, _h) = it
+        return (-y, x)
+
+    # どれかの bbox が中心線をまたぐ＝全幅行あり＝単一カラムとみなす
+    spans_center = any(
+        bbox[0] < 0.5 < bbox[0] + bbox[2] for _text, _conf, bbox in items
+    )
+    if spans_center:
+        return sorted(items, key=_top_key)
+
+    left = sorted(
+        (it for it in items if it[2][0] + it[2][2] / 2 < 0.5), key=_top_key
+    )
+    right = sorted(
+        (it for it in items if it[2][0] + it[2][2] / 2 >= 0.5), key=_top_key
+    )
+    if not left or not right:
+        # 実質1カラム（全アイテムが片側）なら向きは無関係、上→下のみ
+        return sorted(items, key=_top_key)
+    return right + left if reading_order == "rtl" else left + right
+
+
 def ocr_page(path: str | Path, cfg: Config) -> list[OcrItem]:
-    """1ページを Vision OCR して (text, confidence, bbox) のリストを返す。"""
+    """1ページを Vision OCR して (text, confidence, bbox) のリストを読み順で返す。"""
     from ocrmac import ocrmac  # 遅延import（macOS専用）
 
     result = ocrmac.OCR(
@@ -40,8 +83,9 @@ def ocr_page(path: str | Path, cfg: Config) -> list[OcrItem]:
         language_preference=cfg.ocr.languages,
         recognition_level=cfg.ocr.recognition_level,
     ).recognize()
-    # ocrmac の返り値 (text, confidence, bbox) をそのまま整形して返す
-    return [(text, conf, list(bbox)) for text, conf, bbox in result]
+    # ocrmac の返り値 (text, confidence, bbox) を整形し、読み順に並べ替えて返す
+    items = [(text, conf, list(bbox)) for text, conf, bbox in result]
+    return order_reading_items(items, cfg.ocr.reading_order)
 
 
 def _page_images(pages_dir: Path) -> list[Path]:
