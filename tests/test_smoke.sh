@@ -18,6 +18,7 @@ require pyproject.toml
 require config.example.yaml
 require README.md
 require src/kindle2pdf/__init__.py
+require src/kindle2pdf/__main__.py
 require src/kindle2pdf/cli.py
 require src/kindle2pdf/config.py
 require src/kindle2pdf/state.py

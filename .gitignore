@@ -12,6 +12,9 @@ work/
 config.yaml
 state.json
 
+# Node（npx フロント。依存は publish 時に解決、CI テストは @clack 非依存で node --test）
+node_modules/
+
 # OS
 .DS_Store
 

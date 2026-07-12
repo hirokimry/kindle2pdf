@@ -1,0 +1,22 @@
+{
+  "name": "kindle2pdf",
+  "version": "0.1.0",
+  "description": "npx kindle2pdf: Kindle本を検索可能PDF化する対話ウィザード（撮影本体はPythonコアに委譲）",
+  "type": "module",
+  "bin": {
+    "kindle2pdf": "cli/index.mjs"
+  },
+  "files": [
+    "cli/"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test \"cli/test/*.test.mjs\""
+  },
+  "dependencies": {
+    "@clack/prompts": "^0.7.0"
+  },
+  "license": "MIT"
+}
