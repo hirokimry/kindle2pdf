@@ -1,7 +1,17 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { buildCoreArgs, PAGE_LAYOUTS, readingOrderFor } from "../lib/args.mjs";
+import { buildCoreArgs, PAGE_LAYOUTS, readingOrderFor, validateTitle } from "../lib/args.mjs";
+
+test("validateTitle: コア Config.validate() と同じ規則で弾く（/ \\ . .. 空）", () => {
+  assert.equal(validateTitle("吾輩は猫である"), undefined); // OK
+  assert.match(validateTitle(""), /入力/);
+  assert.match(validateTitle("   "), /入力/);
+  assert.match(validateTitle("a/b"), /\/ や/);
+  assert.match(validateTitle("a\\b"), /\/ や/);
+  assert.match(validateTitle("."), /\. や/);
+  assert.match(validateTitle(".."), /\. や/);
+});
 
 test("readingOrderFor: single は読み順不問（null）", () => {
   assert.equal(readingOrderFor("single"), null);

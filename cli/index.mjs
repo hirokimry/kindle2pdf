@@ -10,7 +10,7 @@ import { spawn } from "node:child_process";
 import { rmSync } from "node:fs";
 import { dirname } from "node:path";
 
-import { buildCoreArgs, PAGE_LAYOUTS } from "./lib/args.mjs";
+import { buildCoreArgs, PAGE_LAYOUTS, validateTitle } from "./lib/args.mjs";
 import { ensureConfig } from "./lib/config.mjs";
 import { decideMode } from "./lib/mode.mjs";
 import { describeEvent } from "./lib/progress.mjs";
@@ -34,10 +34,9 @@ async function wizard() {
   const title = await p.text({
     message: "📖 本のタイトルは？",
     placeholder: "例: 吾輩は猫である",
-    validate: (v) =>
-      // book_title は work/<book_title>/ のフォルダ名になる。区切り文字はコアも弾くが、
-      // ウィザード側でも早めに気づけるよう検証する（Issue #32 の検証と同じ趣旨）。
-      /[\\/]/.test(v ?? "") ? "タイトルに / や \\ は使えません" : undefined,
+    // book_title は work/<book_title>/ のフォルダ名になる。コア Config.validate() と同じ
+    // 規則（区切り / 相対参照 / 空文字を弾く）で早めに気づけるようにする（#32/#34）。
+    validate: validateTitle,
   });
   if (p.isCancel(title)) {
     p.cancel("中止しました");
@@ -53,9 +52,6 @@ async function wizard() {
     return 1;
   }
 
-  const { path: configPath, generated } = ensureConfig();
-  const args = buildCoreArgs({ title, layout, configPath, open: true, progress: "json" });
-
   const s = p.spinner();
   s.start("撮影を準備中…");
   let lastOutput = "";
@@ -64,7 +60,13 @@ async function wizard() {
   // 進捗 try の外で起きるため error イベントにならず stderr に出る）も拾って表示する。
   let stderrTail = "";
   let code = 1;
+  let configPath = "";
+  let generated = false;
   try {
+    // config 生成（mkdtemp 失敗等）も含めて try 内に置き、他の失敗経路と同じく
+    // 「撮影に失敗しました」で明確に伝える（未捕捉例外でスタックトレース落ちさせない）。
+    ({ path: configPath, generated } = ensureConfig());
+    const args = buildCoreArgs({ title, layout, configPath, open: true, progress: "json" });
     ({ code } = await runCore({
       args,
       onEvent: (ev) => {

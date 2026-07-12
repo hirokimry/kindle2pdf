@@ -25,6 +25,17 @@ export const PAGE_LAYOUTS = [
   },
 ];
 
+// 本タイトルの早期検証。コア側 Config.validate() と同じ規則（パス区切り / 相対参照 /
+// 空文字を弾く）にして、ウィザードで早めに気づけるようにする（Issue #32 の検証と一致・#34）。
+// 問題なければ undefined、あればエラーメッセージ文字列を返す（clack の validate 規約）。
+export function validateTitle(value) {
+  const v = (value ?? "").trim();
+  if (v === "") return "タイトルを入力してください";
+  if (/[\\/]/.test(v)) return "タイトルに / や \\ は使えません";
+  if (v === "." || v === "..") return "タイトルに . や .. は使えません";
+  return undefined;
+}
+
 // レイアウト選択値 → コアの --reading-order 値（single は null=フラグ不要）。
 export function readingOrderFor(layoutValue) {
   const found = PAGE_LAYOUTS.find((l) => l.value === layoutValue);
