@@ -180,7 +180,7 @@ def test_pipeline_logs_stage_banners(tmp_path, monkeypatch, caplog):
     monkeypatch.setattr(ocr_mod, "ocr_page", fake_ocr_page)
 
     with caplog.at_level(logging.INFO, logger="kindle2pdf.pipeline"):
-        pipeline.run(cfg, tmp_path / "state.json")
+        pipeline.run(cfg)
 
     messages = " ".join(r.message for r in caplog.records)
     for stage in ("capture", "preprocess", "ocr", "build"):

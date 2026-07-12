@@ -59,13 +59,14 @@ def _load(config: str) -> Config:
 def calibrate(config: str) -> None:
     """撮影領域 region を実測するための補助（1枚撮って枠を確認）。[P1]"""
     from . import capture as capture_mod
-    from .pipeline import work_dir
+    from .pipeline import book_dir
 
     with _friendly_errors():
         # config 読込(廃止キー等の ValueError)・region 未設定・auto_region の検出失敗
         # (RuntimeError)を、全て明確なエラーで返す（生 traceback にしない）。
+        # calibrate は 1 冊分の枠確認なので、個別 run ではなく book_dir 直下に保存する。
         cfg = _load(config)
-        out_path, region = capture_mod.run_calibrate(cfg, work_dir(cfg))
+        out_path, region = capture_mod.run_calibrate(cfg, book_dir(cfg))
     x, y, w, h = region
     # 生の config 値ではなく実際に撮影に使った正規化済み region を表示する。
     click.echo(f"✅ region [{x}, {y}, {w}, {h}] を 1 枚撮影しました。")
@@ -75,29 +76,37 @@ def calibrate(config: str) -> None:
 
 @main.command()
 @click.option("--config", default="config.yaml", show_default=True)
-@click.option("--state", "state_path", default="state.json", show_default=True)
-def run(config: str, state_path: str) -> None:
-    """capture→preprocess→ocr→build を全自動実行（レジューム対応）。[P7]"""
+def run(config: str) -> None:
+    """capture→preprocess→ocr→build を全自動実行（レジューム対応）。[P7]
+
+    撮影ごとに work/<book_title>/<日時>/ の専用ディレクトリを切り、state もその中に置く。
+    未完了の撮影があれば自動で続きから再開し、無ければ新規ディレクトリを作る（Issue #31）。
+    """
+    from .pipeline import output_path
     from .pipeline import run as run_pipeline
 
     with _friendly_errors():
-        run_pipeline(_load(config), state_path)
+        cfg = _load(config)
+        run_dir = run_pipeline(cfg)
+    click.echo(f"✅ 完了しました: {output_path(cfg, run_dir)}")
 
 
 @main.command()
 @click.option("--config", default="config.yaml", show_default=True)
-@click.option("--state", "state_path", default="state.json", show_default=True)
-def capture(config: str, state_path: str) -> None:
+def capture(config: str) -> None:
     """capture 段のみ実行（Kindle操作）。[P2/P3]"""
     from . import capture as capture_mod
-    from .pipeline import work_dir
+    from .pipeline import resolve_run_dir
 
     with _friendly_errors():
         # config 読込・検証・撮影の各段が投げるドメイン例外を明確なエラーで返す。
         cfg = _load(config)
         cfg.validate()
+        # 未完了 run があれば継続、無ければ新規 run ディレクトリを作る（run と同じ規約）。
+        run_dir = resolve_run_dir(cfg)
+        state_path = run_dir / "state.json"
         st = State.load(state_path)
-        capture_mod.run_capture(cfg, st, work_dir(cfg), state_path)
+        capture_mod.run_capture(cfg, st, run_dir, state_path)
 
 
 if __name__ == "__main__":

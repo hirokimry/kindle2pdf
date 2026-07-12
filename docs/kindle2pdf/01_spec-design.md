@@ -182,10 +182,9 @@ build:
 
 ### 5.2 ディレクトリ構成
 
-```
+```text
 kindle2pdf/
 ├─ config.yaml
-├─ state.json
 ├─ src/
 │  ├─ capture.py
 │  ├─ preprocess.py
@@ -193,10 +192,13 @@ kindle2pdf/
 │  ├─ build_pdf.py
 │  └─ pipeline.py
 └─ work/<book_title>/
-   ├─ raw/       # 撮影生画像 page_0001.png ...
-   ├─ pages/     # 前処理後の確定ページ
-   ├─ ocr/       # page_0001.json（text/bbox/confidence）
-   └─ output/    # <book_title>.pdf
+   ├─ calibrate.png            # calibrate の枠確認画像（1 冊で共有）
+   └─ <YYYY-MM-DD_HHMMSS>/     # 撮影ごとの run ディレクトリ（#31）
+      ├─ state.json            # この run の進捗（現在ページ・完了段・ハッシュ履歴）
+      ├─ raw/       # 撮影生画像 page_0001.png ...
+      ├─ pages/     # 前処理後の確定ページ
+      ├─ ocr/       # page_0001.json（text/bbox/confidence）
+      └─ output/    # <book_title>.pdf
 ```
 
 ### 5.3 事前準備（一度だけ）

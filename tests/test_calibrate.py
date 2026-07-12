@@ -140,7 +140,7 @@ def test_cli_run_runtimeerror_is_friendly(tmp_path, monkeypatch):
     )
     import kindle2pdf.pipeline as pipeline_mod
 
-    def boom(cfg, state_path):
+    def boom(cfg, **kwargs):
         raise RuntimeError("Kindle ウィンドウが見つかりません")
 
     monkeypatch.setattr(pipeline_mod, "run", boom)
