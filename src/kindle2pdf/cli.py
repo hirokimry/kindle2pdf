@@ -8,7 +8,8 @@
 from __future__ import annotations
 
 import logging
-from contextlib import contextmanager
+import subprocess
+from contextlib import contextmanager, nullcontext
 
 import click
 
@@ -54,6 +55,18 @@ def _load(config: str) -> Config:
     return Config.load(config)
 
 
+def _open_file(path: str) -> None:
+    """生成した PDF を OS の既定アプリで開く（macOS: `open`）。
+
+    Why: 撮影完了後にフロント／利用者がすぐ結果を確認できるようにする（Issue #32）。
+    open が無い環境やエラーは握り潰す。PDF 生成自体は成功済みで、開けないことは致命でない。
+    """
+    try:
+        subprocess.run(["open", path], check=False)
+    except OSError:
+        pass
+
+
 @main.command()
 @click.option("--config", default="config.yaml", show_default=True)
 def calibrate(config: str) -> None:
@@ -76,19 +89,71 @@ def calibrate(config: str) -> None:
 
 @main.command()
 @click.option("--config", default="config.yaml", show_default=True)
-def run(config: str) -> None:
+@click.option(
+    "--title",
+    default=None,
+    help="本タイトル（config.yaml の book_title を上書き）。フロントから渡す想定。",
+)
+@click.option(
+    "--reading-order",
+    type=click.Choice(["rtl", "ltr"]),
+    default=None,
+    help=(
+        "見開き(2カラム)の読み順。rtl=右→左(漫画/縦書き) ltr=左→右(横書き)。"
+        "片ページ表示なら結果に影響しない。片ページ/見開きは Kindle ウィンドウ幅で選ぶ。"
+    ),
+)
+@click.option(
+    "--open/--no-open",
+    "open_pdf",
+    default=True,
+    show_default=True,
+    help="完了時に生成PDFを開く（--no-open で抑制）。",
+)
+@click.option(
+    "--progress",
+    "progress_mode",
+    type=click.Choice(["text", "json"]),
+    default="text",
+    show_default=True,
+    help="進捗出力。text=人間向けログ / json=1行1イベントのJSON Lines（フロント連携用）。",
+)
+def run(
+    config: str,
+    title: str | None,
+    reading_order: str | None,
+    open_pdf: bool,
+    progress_mode: str,
+) -> None:
     """capture→preprocess→ocr→build を全自動実行（レジューム対応）。[P7]
 
     撮影ごとに work/<book_title>/<日時>/ の専用ディレクトリを切り、state もその中に置く。
     未完了の撮影があれば自動で続きから再開し、無ければ新規ディレクトリを作る（Issue #31）。
+
+    フラグ（--title / --reading-order / --no-open / --progress）で対話なしに実行でき、
+    対話フロント（npx kindle2pdf）はこの経路に答えを渡す。--config による無対話フル制御は
+    従来どおり維持され、フラグ未指定なら config.yaml の値がそのまま使われる（Issue #32）。
     """
+    from . import progress as progress_mod
     from .pipeline import output_path
     from .pipeline import run as run_pipeline
 
     with _friendly_errors():
         cfg = _load(config)
-        run_dir = run_pipeline(cfg)
-    click.echo(f"✅ 完了しました: {output_path(cfg, run_dir)}")
+        # フラグは config.yaml への上書き。未指定（None）なら config の値を尊重する。
+        if title is not None:
+            cfg.book_title = title
+        if reading_order is not None:
+            cfg.ocr.reading_order = reading_order
+        # --progress json のときだけ機械可読シンクを差し込む。text は従来ログ経路のまま。
+        sink = progress_mod.json_lines() if progress_mode == "json" else nullcontext()
+        with sink:
+            run_dir = run_pipeline(cfg)
+        out_path = output_path(cfg, run_dir)
+    # 完了PDFを自動で開く（--no-open で抑制）。エラーは _open_file 側で握り潰す。
+    if open_pdf:
+        _open_file(str(out_path))
+    click.echo(f"✅ 完了しました: {out_path}")
 
 
 @main.command()

@@ -17,7 +17,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from . import build_pdf, capture, ocr, preprocess
+from . import build_pdf, capture, ocr, preprocess, progress
 from .build_pdf import OcrItem
 from .config import Config
 from .state import State
@@ -158,23 +158,40 @@ def run(
     if not state_path.exists():
         state.save(state_path)
 
-    if state.stage == "capture":
-        logger.info("=== capture 段を開始します ===")
-        capture.run_capture(cfg, state, run_dir, state_path)
-        state.advance_stage(); state.save(state_path)
-    if state.stage == "preprocess":
-        logger.info("=== preprocess 段を開始します ===")
-        # run_dir/state_path を渡し raw 1枚ごとに進捗を永続化する（capture 段と同じレジューム粒度）。
-        preprocess.process_all(cfg, state, run_dir, state_path)
-        state.advance_stage(); state.save(state_path)
-    if state.stage == "ocr":
-        logger.info("=== ocr 段を開始します ===")
-        # run_dir/state_path を渡しページ1枚ごとに進捗を永続化する（未OCRページから再開）。
-        ocr.ocr_all(cfg, state, run_dir, state_path)
-        state.advance_stage(); state.save(state_path)
-    if state.stage == "build":
-        logger.info("=== build 段を開始します ===")
-        build_stage(cfg, run_dir)
-        state.advance_stage(); state.save(state_path)
+    # 段の実行を進捗イベントで挟む。人間向け INFO ログ（標準エラー）とは独立に、
+    # フロント連携用の機械可読イベント（progress.emit）を出す。既定シンクは no-op なので
+    # CLI が JSON Lines シンクを差し込まない限り挙動は変わらない（Issue #32）。
+    try:
+        if state.stage == "capture":
+            logger.info("=== capture 段を開始します ===")
+            progress.emit("stage_start", stage="capture")
+            capture.run_capture(cfg, state, run_dir, state_path)
+            progress.emit("stage_complete", stage="capture")
+            state.advance_stage(); state.save(state_path)
+        if state.stage == "preprocess":
+            logger.info("=== preprocess 段を開始します ===")
+            progress.emit("stage_start", stage="preprocess")
+            # run_dir/state_path を渡し raw 1枚ごとに進捗を永続化する（capture 段と同じレジューム粒度）。
+            preprocess.process_all(cfg, state, run_dir, state_path)
+            progress.emit("stage_complete", stage="preprocess")
+            state.advance_stage(); state.save(state_path)
+        if state.stage == "ocr":
+            logger.info("=== ocr 段を開始します ===")
+            progress.emit("stage_start", stage="ocr")
+            # run_dir/state_path を渡しページ1枚ごとに進捗を永続化する（未OCRページから再開）。
+            ocr.ocr_all(cfg, state, run_dir, state_path)
+            progress.emit("stage_complete", stage="ocr")
+            state.advance_stage(); state.save(state_path)
+        if state.stage == "build":
+            logger.info("=== build 段を開始します ===")
+            progress.emit("stage_start", stage="build")
+            build_stage(cfg, run_dir)
+            progress.emit("stage_complete", stage="build")
+            state.advance_stage(); state.save(state_path)
+    except Exception as exc:
+        # 失敗もフロントが検知できるよう機械可読エラーイベントを出してから送出する。
+        progress.emit("error", stage=state.stage, message=str(exc))
+        raise
     logger.info("=== 全段完了（stage=%s）===", state.stage)
+    progress.emit("complete", run_dir=str(run_dir), output=str(output_path(cfg, run_dir)))
     return run_dir

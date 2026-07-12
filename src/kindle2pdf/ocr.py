@@ -19,6 +19,7 @@ import logging
 import os
 from pathlib import Path
 
+from . import progress
 from .config import Config
 from .state import State
 
@@ -177,6 +178,7 @@ def ocr_all(
         state.ocr_done = done
         if state_path is not None:
             state.save(state_path)
+        progress.emit("page", stage="ocr", page=done, total=len(pages))
         # 数百ページでも追跡できるよう一定間隔で進捗を出す。
         if done % _PROGRESS_EVERY == 0:
             logger.info("OCR進捗: %d/%d ページ", done, len(pages))

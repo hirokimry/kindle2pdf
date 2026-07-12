@@ -15,7 +15,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from . import imaging, naming
+from . import imaging, naming, progress
 from .config import Config, validate_region
 from .state import State
 
@@ -536,6 +536,8 @@ def run_capture(
                 repeat = 0
                 state.repeat_count = 0
                 logger.info("撮影確定: %d ページ目", state.captured)
+                # 総数は最終ページ検出まで未知のため total=None（フロントは件数のみ更新）。
+                progress.emit("page", stage="capture", page=state.captured, total=None)
 
             state.save(state_path)
             prev_hash = h
