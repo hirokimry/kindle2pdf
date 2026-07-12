@@ -71,7 +71,7 @@ class FakeScreen:
     def phash(self, path):
         return imagehash.hex_to_hash(self.current[0])
 
-    def turn_page(self, cfg):
+    def turn_page(self, cfg, app_name=None):
         self.turns += 1
 
 
@@ -394,7 +394,7 @@ def test_run_capture_auto_region_wires_window_id_and_crop(monkeypatch, tmp_path)
     monkeypatch.setattr(imaging, "crop_top_fraction", lambda p, f: cropped.append(f))
     monkeypatch.setattr(imaging, "mean_brightness", lambda p: 200)
     monkeypatch.setattr(imaging, "phash", lambda p: imagehash.hex_to_hash(HASH_A))
-    monkeypatch.setattr(capture, "turn_page", lambda cfg: None)
+    monkeypatch.setattr(capture, "turn_page", lambda cfg, app_name=None: None)
 
     capture.run_capture(
         _make_cfg(auto_region=True, app_name="Amazon Kindle"),
@@ -461,3 +461,66 @@ def test_grab_uses_window_id_flag(monkeypatch):
     capture.grab(None, "/tmp/x.png", window_id=79362)
     assert "-l" in calls["cmd"] and "79362" in calls["cmd"]
     assert not any(str(c).startswith("-R") for c in calls["cmd"])
+
+
+# --- resolve_app_name（Kindleアプリ名の自動検出＋キャッシュ・#33）-----------------
+
+
+def _ok_detector(name):
+    """ウィンドウ検出成功を模す detector（戻り値は捨てられる）。"""
+    return (1, (0, 0, 10, 10), 100)
+
+
+def test_resolve_app_name_prefers_explicit(tmp_path):
+    """明示指定があればウィンドウ検出せずそのまま採用する（最優先）。"""
+    calls = []
+
+    def detector(name):
+        calls.append(name)
+        return _ok_detector(name)
+
+    resolved = capture.resolve_app_name(
+        "My Kindle", detector=detector, cache_path=tmp_path / "app_name"
+    )
+    assert resolved == "My Kindle"
+    assert calls == []  # 明示指定時は検出を呼ばない
+
+
+def test_resolve_app_name_tries_candidates_in_order(tmp_path):
+    """未指定なら候補を順に試し、最初に見つかった名前を採用してキャッシュする。"""
+    def detector(name):
+        if name == "Kindle":
+            return _ok_detector(name)
+        raise RuntimeError("見つからない")
+
+    cache = tmp_path / "app_name"
+    resolved = capture.resolve_app_name("", detector=detector, cache_path=cache)
+    assert resolved == "Kindle"  # "Amazon Kindle" は失敗し "Kindle" が採用される
+    assert cache.read_text(encoding="utf-8") == "Kindle"
+
+
+def test_resolve_app_name_uses_cache_first(tmp_path):
+    """キャッシュ済みの名前を最初に試す（再探索を省く）。"""
+    cache = tmp_path / "app_name"
+    cache.write_text("Amazon Kindle", encoding="utf-8")
+    calls = []
+
+    def detector(name):
+        calls.append(name)
+        return _ok_detector(name)
+
+    resolved = capture.resolve_app_name("", detector=detector, cache_path=cache)
+    assert resolved == "Amazon Kindle"
+    assert calls[0] == "Amazon Kindle"  # キャッシュを最初に試す
+
+
+def test_resolve_app_name_raises_when_none_found(tmp_path):
+    """どの候補でも見つからなければ試した名前を含む明確なエラーで止まる。"""
+    def detector(name):
+        raise RuntimeError("見つからない")
+
+    with pytest.raises(RuntimeError) as excinfo:
+        capture.resolve_app_name("", detector=detector, cache_path=tmp_path / "app_name")
+    msg = str(excinfo.value)
+    assert "Amazon Kindle" in msg
+    assert "Kindle" in msg

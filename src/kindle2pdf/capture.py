@@ -10,6 +10,7 @@ Kindle操作なしに何度でも再実行できる。
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -17,6 +18,10 @@ from pathlib import Path
 from . import imaging, naming
 from .config import Config, validate_region
 from .state import State
+
+# 未指定時に順に試す Kindle アプリ名。新しめの Mac 版は "Amazon Kindle"、旧版は "Kindle"。
+# 見つかった名前をキャッシュして次回以降の探索を省く（#33）。
+KINDLE_APP_CANDIDATES = ("Amazon Kindle", "Kindle")
 
 try:  # macOS のみ（pyobjc-framework-Quartz）。非 macOS では auto_region 不可。
     import Quartz
@@ -60,10 +65,12 @@ def run_calibrate(cfg: Config, work_dir: Path) -> tuple[Path, tuple[int, int, in
     """
     work_dir.mkdir(parents=True, exist_ok=True)
     out_path = work_dir / "calibrate.png"
+    # 未指定なら候補試行で app_name を自動決定する（明示指定はそのまま優先）（#33）。
+    app_name = resolve_app_name(cfg.capture.app_name)
     if cfg.capture.auto_region:
         # ウィンドウ ID を検出し `-l` で直接撮る（前面化不要・別 Space 可）。撮影像に含まれる
         # タイトルバー帯だけを AX 実測の高さで上端クロップし、本文余白は残す。
-        window_id, region, pid = detect_window_id(cfg.capture.app_name)
+        window_id, region, pid = detect_window_id(app_name)
         grab(None, out_path, window_id=window_id)
         titlebar_pt = detect_titlebar_pt(pid, region)
         win_h = region[3]
@@ -77,7 +84,7 @@ def run_calibrate(cfg: Config, work_dir: Path) -> tuple[Path, tuple[int, int, in
             region = (x, y + cut, w, h - cut)
     else:
         # 静的 region 運用: Kindle を前面化してから領域を撮る（未実測は ValueError で弾く）。
-        activate_kindle(cfg.capture.app_name)
+        activate_kindle(app_name)
         time.sleep(cfg.capture.page_turn_wait)
         region = validate_region(cfg.capture.region)
         grab(list(region), out_path)
@@ -88,6 +95,75 @@ def activate_kindle(app_name: str = "Kindle") -> None:
     """Kindleを前面化する。app_name は環境により "Amazon Kindle" 等。"""
     subprocess.run(
         ["osascript", "-e", f'tell application "{app_name}" to activate'], check=False
+    )
+
+
+def _app_name_cache_path() -> Path:
+    """自動検出した app_name のキャッシュ先。ユーザーキャッシュ配下（マシン共通）。"""
+    # 特定マシンパスをハードコードせず、環境変数→ホーム配下の順で解決する（public-ready）。
+    root = os.environ.get("KINDLE2PDF_CACHE_DIR")
+    base = Path(root) if root else Path.home() / ".cache" / "kindle2pdf"
+    return base / "app_name"
+
+
+def _read_cached_app_name(cache_path: Path) -> str | None:
+    try:
+        name = cache_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return name or None
+
+
+def _write_cached_app_name(cache_path: Path, name: str) -> None:
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(name, encoding="utf-8")
+    except OSError:
+        # キャッシュは高速化のための任意機能。書けなくても検出自体は成功しているので握り潰す。
+        logger.debug("app_name のキャッシュ書き込みに失敗しました（無視して継続）: %s", cache_path)
+
+
+def resolve_app_name(
+    configured: str | None = None,
+    *,
+    detector=None,
+    cache_path: Path | None = None,
+) -> str:
+    """撮影に使う Kindle アプリ名を決めて返す（#33）。
+
+    明示指定（configured 非空）があればそれを最優先する。未指定なら
+    「キャッシュ済みの名前 → 既定候補（"Amazon Kindle" → "Kindle"）」の順に
+    ウィンドウ検出を試し、最初に見つかった名前を採用してキャッシュする。
+    どの候補でもウィンドウが見つからなければ、次のアクションが分かる明確なエラーで止める
+    （サイレントに誤検出しない）。detector / cache_path はテスト用の注入口。
+    """
+    if configured:
+        return configured
+    detect = detector or detect_window_id
+    cpath = cache_path or _app_name_cache_path()
+
+    candidates: list[str] = []
+    cached = _read_cached_app_name(cpath)
+    if cached:
+        candidates.append(cached)
+    for name in KINDLE_APP_CANDIDATES:
+        if name not in candidates:
+            candidates.append(name)
+
+    tried: list[str] = []
+    for name in candidates:
+        try:
+            detect(name)
+        except RuntimeError:
+            tried.append(name)
+            continue
+        _write_cached_app_name(cpath, name)
+        return name
+    raise RuntimeError(
+        "Kindle ウィンドウが見つかりません（試した名前: "
+        + ", ".join(repr(t) for t in tried)
+        + "）。Kindle を起動し対象の本を開いた状態で再実行してください。"
+        "アプリ名が特殊な場合は config.yaml の capture.app_name に明示してください。"
     )
 
 
@@ -255,14 +331,16 @@ def _auto_region_params(
     return window_id, bounds, crop_fraction
 
 
-def turn_page(cfg: Config) -> None:
+def turn_page(cfg: Config, app_name: str | None = None) -> None:
     """右/左矢印キーを送出してページ送りする（osascript / cliclick）。
 
     osascript: key code 124=右, 123=左。cliclick: kp:arrow-right/left。
     キー送出には実行元Terminalに「アクセシビリティ」権限が必要。
+    app_name 未指定時は cfg の値を使う（run_capture は自動検出済みの名前を渡す・#33）。
     """
     key = cfg.capture.page_turn_key
     method = cfg.capture.page_turn_method
+    name = app_name if app_name else cfg.capture.app_name
     if key not in _KEY_CODE:
         raise ValueError(f"page_turn_key は right / left のいずれか（受領値: {key}）。")
 
@@ -272,7 +350,7 @@ def turn_page(cfg: Config) -> None:
             [
                 "osascript",
                 "-e",
-                f'tell application "{cfg.capture.app_name}" to activate',
+                f'tell application "{name}" to activate',
                 "-e",
                 "delay 0.15",
                 "-e",
@@ -387,8 +465,12 @@ def run_capture(
     window_id = None
     crop_fraction = 0.0
     last_bounds = None
+    # ページ送りの前面化に使う app_name。auto_region では候補試行で自動決定する（#33）。
+    app_name = cap.app_name
     if cap.auto_region:
-        window_id, last_bounds, crop_fraction = _auto_region_params(cap.app_name)
+        # 未指定なら app_name を候補試行で自動決定し、以降のページはその名前で再検出する（#33）。
+        app_name = resolve_app_name(cap.app_name)
+        window_id, last_bounds, crop_fraction = _auto_region_params(app_name)
         logger.info(
             "ウィンドウ自動検出: id=%s 矩形=%s（上端タイトルバーのみクロップ・本文余白は保全）",
             window_id, last_bounds,
@@ -407,7 +489,7 @@ def run_capture(
         while state.captured < cap.max_pages:
             if cap.auto_region:
                 # リサイズ/移動に追従してクロップ比率を最新化する（枠の写り込み・余白削りを防ぐ）。
-                window_id, bounds, crop_fraction = _auto_region_params(cap.app_name)
+                window_id, bounds, crop_fraction = _auto_region_params(app_name)
                 if bounds != last_bounds:
                     logger.info(
                         "ウィンドウ変化を検出: 矩形=%s に追従しクロップ比率を再算出しました", bounds
@@ -440,7 +522,7 @@ def run_capture(
 
             state.save(state_path)
             prev_hash = h
-            turn_page(cfg)
+            turn_page(cfg, app_name)
             time.sleep(cap.page_turn_wait)
     finally:
         if pending.exists():
