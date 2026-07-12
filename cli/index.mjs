@@ -70,7 +70,10 @@ async function wizard() {
 }
 
 async function main() {
-  const { mode, args } = decideMode(process.argv.slice(2), Boolean(process.stdin.isTTY));
+  // wizard は stdin/stdout 双方が TTY のときだけ。stdout だけリダイレクト（`> log.txt`）でも
+  // clack の ANSI エスケープをファイルに書かないよう、両方 TTY を対話条件にする（#34）。
+  const interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
+  const { mode, args } = decideMode(process.argv.slice(2), interactive);
   const code = mode === "wizard" ? await wizard() : await passthrough(args);
   process.exit(code);
 }
