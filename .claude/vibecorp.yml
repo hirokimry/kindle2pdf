@@ -6,8 +6,8 @@ base_branch: main
 protected_files:
   - MVV.md
 coderabbit:
-  enabled: true
-claude_action:
+  enabled: false
+vibehawk:
   enabled: true
   skip_paths:
     - "*.lock"
