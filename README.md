@@ -55,7 +55,7 @@ pip install -e ".[macos,dev]"   # ocrmac は macos extra。非macは省略
 | ⌨️ アクセシビリティ | ページ送り（キー送出）・Kindle 前面化・AX でタイトルバー高さを実測 | ページ送りが `-1719` で失敗する / タイトルバー高さを実測できず撮影が止まる |
 
 - 付与後は Terminal の**再起動**が要る（特に画面収録）。
-- Kindle アプリ名は環境で異なる。新しめの Mac 版は `config.yaml` の `capture.app_name` を `"Amazon Kindle"` にする（`tell application "Kindle"` が `-1728` で失敗する場合）。
+- Kindle アプリ名は環境で異なるが、**未設定でも自動検出される**。`capture.app_name` が空なら `"Amazon Kindle"` → `"Kindle"` の順に AppleScript で実在を検証し、通った名前を `~/.cache/kindle2pdf/app_name` にキャッシュして以後使い回す。自動検出で解決しない特殊なアプリ名のときだけ `config.yaml` の `capture.app_name` に手動指定する。
 
 ---
 

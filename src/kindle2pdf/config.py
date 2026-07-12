@@ -39,9 +39,11 @@ class CaptureConfig:
     # （本文の白余白・柱は一切削らない）。Kindle 自身の進捗フッター等は Kindle の表示設定で
     # 消す運用。false で静的 region。通常ウィンドウ表示前提（全画面は自動ページ送り不可）。
     auto_region: bool = True
-    # Kindle アプリの AppleScript 名。環境により "Amazon Kindle" 等になる
-    # （`tell application "Kindle"` が -1728 で失敗する環境がある）。
-    app_name: str = "Kindle"
+    # Kindle アプリの AppleScript / ウィンドウ名。空なら実行時に候補（"Amazon Kindle" →
+    # "Kindle"）を順に試して自動検出しキャッシュする（#33）。環境により名前が違う
+    # （新しめの Mac 版は "Amazon Kindle"、`tell application "Kindle"` が -1728 で失敗する
+    # 環境もある）ため、明示指定があればそれを最優先する。
+    app_name: str = ""
     page_turn_key: str = "right"
     page_turn_method: str = "osascript"
     page_turn_wait: float = 1.0

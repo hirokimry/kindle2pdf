@@ -27,6 +27,7 @@ def _make_cfg(**cap_over) -> Config:
     defaults = dict(
         region=[0, 0, 10, 10],
         auto_region=False,  # テストは静的 region + FakeScreen で撮影経路を検証する
+        app_name="Kindle",  # 明示指定で resolve_app_name を短絡（実 osascript を呼ばない・CI 安全）
         stable_required=1,
         end_detect_repeats=3,
         same_threshold=2,
@@ -71,7 +72,7 @@ class FakeScreen:
     def phash(self, path):
         return imagehash.hex_to_hash(self.current[0])
 
-    def turn_page(self, cfg):
+    def turn_page(self, cfg, app_name=None):
         self.turns += 1
 
 
@@ -394,7 +395,7 @@ def test_run_capture_auto_region_wires_window_id_and_crop(monkeypatch, tmp_path)
     monkeypatch.setattr(imaging, "crop_top_fraction", lambda p, f: cropped.append(f))
     monkeypatch.setattr(imaging, "mean_brightness", lambda p: 200)
     monkeypatch.setattr(imaging, "phash", lambda p: imagehash.hex_to_hash(HASH_A))
-    monkeypatch.setattr(capture, "turn_page", lambda cfg: None)
+    monkeypatch.setattr(capture, "turn_page", lambda cfg, app_name=None: None)
 
     capture.run_capture(
         _make_cfg(auto_region=True, app_name="Amazon Kindle"),
@@ -461,3 +462,62 @@ def test_grab_uses_window_id_flag(monkeypatch):
     capture.grab(None, "/tmp/x.png", window_id=79362)
     assert "-l" in calls["cmd"] and "79362" in calls["cmd"]
     assert not any(str(c).startswith("-R") for c in calls["cmd"])
+
+
+# --- resolve_app_name（Kindleアプリ名の自動検出＋キャッシュ・#33）-----------------
+# verifier は「その名前を AppleScript が受け付けるか（id of application が通るか）」を返す
+# 述語。detect_window_id の所有者名部分一致では "Amazon Kindle" と "Kindle" を区別できない
+# ため、実際に AppleScript で使える名前かを検証する実体に合わせて bool を返すfakeで検証する。
+
+
+def test_resolve_app_name_prefers_explicit(tmp_path):
+    """明示指定があれば検証せずそのまま採用する（最優先）。"""
+    calls = []
+
+    def verifier(name):
+        calls.append(name)
+        return True
+
+    resolved = capture.resolve_app_name(
+        "My Kindle", verifier=verifier, cache_path=tmp_path / "app_name"
+    )
+    assert resolved == "My Kindle"
+    assert calls == []  # 明示指定時は検証を呼ばない
+
+
+def test_resolve_app_name_tries_candidates_in_order(tmp_path):
+    """未指定なら候補を順に検証し、最初に通った名前を採用してキャッシュする。"""
+    def verifier(name):
+        return name == "Kindle"  # "Amazon Kindle" は通らず "Kindle" だけ通る
+
+    cache = tmp_path / "app_name"
+    resolved = capture.resolve_app_name("", verifier=verifier, cache_path=cache)
+    assert resolved == "Kindle"
+    assert cache.read_text(encoding="utf-8") == "Kindle"
+
+
+def test_resolve_app_name_uses_cache_first(tmp_path):
+    """キャッシュ済みの名前を最初に検証する（再探索を省く）。"""
+    cache = tmp_path / "app_name"
+    cache.write_text("Amazon Kindle", encoding="utf-8")
+    calls = []
+
+    def verifier(name):
+        calls.append(name)
+        return True
+
+    resolved = capture.resolve_app_name("", verifier=verifier, cache_path=cache)
+    assert resolved == "Amazon Kindle"
+    assert calls[0] == "Amazon Kindle"  # キャッシュを最初に試す
+
+
+def test_resolve_app_name_raises_when_none_found(tmp_path):
+    """どの候補も通らなければ試した名前を含む明確なエラーで止まる。"""
+    def verifier(name):
+        return False
+
+    with pytest.raises(RuntimeError) as excinfo:
+        capture.resolve_app_name("", verifier=verifier, cache_path=tmp_path / "app_name")
+    msg = str(excinfo.value)
+    assert "Amazon Kindle" in msg
+    assert "Kindle" in msg

@@ -5,7 +5,7 @@ book_title: "sample-book"
 capture:
   auto_region: true               # true=Kindleウィンドウを自動検出→ screencapture -l で撮り、AX実測のタイトルバー帯だけ上端クロップ（推奨/前面化不要・本文余白を削らない・通常ウィンドウ前提）。false で下の静的 region
   region: [0, 0, 0, 0]            # auto_region=false 時のみ使用。[x, y, w, h] を calibrate で実測
-  app_name: "Kindle"              # Kindle の AppleScript 名。新しめの Mac 版は "Amazon Kindle"
+  app_name: ""                    # Kindle アプリ名。空なら "Amazon Kindle"→"Kindle" を自動検出しキャッシュ。特殊名の環境だけ明示指定する
   # 見開き/片ページは Kindle のウィンドウ幅で選ぶ（撮影は常に 1 撮影 = 1 ページ）。
   #   半画面幅 → Kindle が単一ページ表示 → 片ページ（文章系向け）
   #   全画面幅 → Kindle が見開き表示   → 見開き 1 枚をそのまま横長 PDF ページに
