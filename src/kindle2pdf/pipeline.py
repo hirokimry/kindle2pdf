@@ -146,6 +146,13 @@ def run(
     for sub in ("raw", "pages", "ocr", "output"):
         (run_dir / sub).mkdir(parents=True, exist_ok=True)
     state = State.load(state_path)
+    # capture 段が最初の state.save に到達する前（Kindle 未起動などで
+    # ウィンドウ検出が RuntimeError）に落ちても、この run が次回 resolve_run_dir で
+    # 再開対象になるよう初期 state を即時永続化する。これがないと state.json 無しの
+    # 空ディレクトリが _incomplete_run_dir に拾われず、実行のたびに work/<book>/<日時>/
+    # が積み上がり、破壊的 rm を撤廃した狙い（Issue #31）を損なう。
+    if not state_path.exists():
+        state.save(state_path)
 
     if state.stage == "capture":
         logger.info("=== capture 段を開始します ===")

@@ -194,6 +194,37 @@ def test_resolve_run_dir_resume_false_forces_new(tmp_path, monkeypatch):
     assert resolved == bdir / "2026-07-12_143000"
 
 
+def test_failed_capture_leaves_resumable_run_dir(tmp_path, monkeypatch):
+    """capture が state 保存前に落ちても run ディレクトリは再開対象として残る（#31）。
+
+    Kindle 未起動などで capture が最初の state.save 前に RuntimeError を投げても、
+    初期 state.json が即時永続化されているため、次回実行は同一ディレクトリを再開し、
+    空ディレクトリが積み上がらない（破壊的 rm 撤廃の狙いを守る）。
+    """
+    monkeypatch.chdir(tmp_path)
+    cfg = _single_page_config(tmp_path)
+
+    def boom(cfg, state, work_dir, state_path):  # noqa: ANN001
+        # state.save 到達前にウィンドウ検出が失敗する初回撮影を模す。
+        raise RuntimeError("Kindle ウィンドウが見つかりません")
+
+    monkeypatch.setattr(pipeline.capture, "run_capture", boom)
+
+    with pytest.raises(RuntimeError):
+        pipeline.run(cfg, now=T0)
+
+    bdir = pipeline.book_dir(cfg)
+    first_dirs = pipeline._run_dirs(bdir)
+    assert len(first_dirs) == 1
+    assert (first_dirs[0] / "state.json").exists()  # 初期 state が残っている
+
+    # 2回目（T1）も同じ失敗。resume で同一ディレクトリを再開し新規を作らない。
+    with pytest.raises(RuntimeError):
+        pipeline.run(cfg, now=T1)
+
+    assert pipeline._run_dirs(bdir) == first_dirs  # ディレクトリが増えていない
+
+
 def test_resume_from_build_stage_only(tmp_path, monkeypatch):
     """既存 pages/ + ocr/ から build 段だけ再開して PDF を生成できる。"""
     monkeypatch.chdir(tmp_path)
