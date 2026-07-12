@@ -11,9 +11,11 @@ fail=0
 assert_contains() {
   # $1=ファイル $2=パターン $3=説明
   if grep -q -e "$2" "$1"; then
-    echo "OK: $3"
+    echo "OK: ${3}"
   else
-    echo "NG: $3（$1 に '$2' が無い）"
+    # 変数展開の直後に全角文字が続く場合はブレースで囲む（macOS bash 3.2 の
+    # UTF-8 マルチバイト unbound variable バグ回避・shell.md 準拠）。
+    echo "NG: ${3}（${1} に '${2}' が無い）"
     fail=1
   fi
 }
