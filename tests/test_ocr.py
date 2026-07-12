@@ -83,6 +83,22 @@ def test_single_column_full_width_lines_keep_top_to_bottom():
     assert _texts(ordered) == ["1行目", "2行目", "3行目"]
 
 
+def test_single_column_all_items_on_one_side_keep_top_to_bottom():
+    """全幅行は無いが全itemが片側に寄る実質1カラムは上→下ソートのみになる。
+
+    spans_center=False かつ left/right の一方が空（`not left or not right`）の分岐。
+    狭い段組みの片ページ等で到達し得るため、方向に依らず読み順が保たれることを検証する。
+    """
+    scrambled: list[ocr.OcrItem] = [
+        ("下", 0.9, [0.1, 0.3, 0.3, 0.05]),  # x+w=0.4 で中心をまたがず全て左寄り
+        ("上", 0.9, [0.1, 0.8, 0.3, 0.05]),
+        ("中", 0.9, [0.1, 0.55, 0.3, 0.05]),
+    ]
+    # right が空なので rtl/ltr いずれでも上→下のまま
+    assert _texts(ocr.order_reading_items(scrambled, "rtl")) == ["上", "中", "下"]
+    assert _texts(ocr.order_reading_items(scrambled, "ltr")) == ["上", "中", "下"]
+
+
 def test_single_item_is_returned_as_is():
     """要素が1つ以下ならそのまま返す（並べ替え不要）。"""
     one: list[ocr.OcrItem] = [("only", 0.9, [0.1, 0.5, 0.2, 0.05])]
