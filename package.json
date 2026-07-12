@@ -13,7 +13,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "test": "node --test \"cli/test/*.test.mjs\""
+    "test": "node --test cli/test/*.test.mjs"
   },
   "dependencies": {
     "@clack/prompts": "^0.7.0"

@@ -42,6 +42,8 @@ echo "=== 配布エントリの構文/import 検証（node --check） ==="
 node --check cli/index.mjs && echo "OK: cli/index.mjs の構文検証成功"
 
 echo "=== Node フロント 単体テスト（node --test） ==="
-node --test "cli/test/*.test.mjs"
+# glob はクォートせずシェルに展開させる。node 自身の glob 引数解釈は v22.6+ 依存だが、
+# シェル展開なら engines.node ">=18"（Node 18/20）でもテストが確実に走る。
+node --test cli/test/*.test.mjs
 
 echo "Node フロントテスト成功"
