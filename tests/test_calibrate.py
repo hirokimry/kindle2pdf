@@ -155,6 +155,30 @@ def test_cli_run_runtimeerror_is_friendly(tmp_path, monkeypatch):
     assert "Kindle ウィンドウ" in result.output
 
 
+def test_cli_run_resume_flag_reaches_pipeline(tmp_path, monkeypatch):
+    """--resume/--no-resume が pipeline.run の resume 引数に届く（ウィザード再開拒否経路・#35）。"""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config.yaml").write_text(
+        "book_title: t\ncapture:\n  auto_region: true\n", encoding="utf-8"
+    )
+    import kindle2pdf.pipeline as pipeline_mod
+
+    captured = {}
+
+    def fake_run(cfg, *, resume=True, **kwargs):
+        captured["resume"] = resume
+        return tmp_path / "work" / "t" / "2026-07-12_000000"
+
+    monkeypatch.setattr(pipeline_mod, "run", fake_run)
+    monkeypatch.setattr("kindle2pdf.cli._open_file", lambda p: None)
+
+    CliRunner().invoke(main, ["run", "--config", "config.yaml", "--no-resume", "--no-open"])
+    assert captured["resume"] is False  # --no-resume で新規 run を強制
+
+    CliRunner().invoke(main, ["run", "--config", "config.yaml", "--no-open"])
+    assert captured["resume"] is True  # 既定は再開
+
+
 def test_cli_capture_runtimeerror_is_friendly(tmp_path, monkeypatch):
     """capture コマンドも検出失敗(RuntimeError)を明確なエラーで返す（生 traceback にしない）。"""
     monkeypatch.chdir(tmp_path)

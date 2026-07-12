@@ -47,7 +47,14 @@ export function readingOrderFor(layoutValue) {
 // ウィザードの回答からコア `run` の argv を組み立てる。
 // title 未指定/空はフラグを付けない（コアが config 値を尊重する）。progress は既定 json
 // （フロントがスピナー描画のため機械可読で受け取る）。
-export function buildCoreArgs({ title, layout, open = true, progress = "json", configPath } = {}) {
+export function buildCoreArgs({
+  title,
+  layout,
+  open = true,
+  progress = "json",
+  configPath,
+  resume,
+} = {}) {
   const args = ["run"];
   if (configPath) args.push("--config", configPath);
   // 検証（validateTitle）と一致させて trim 済みの値を渡す。前後空白付き（"  猫  "）で
@@ -60,5 +67,9 @@ export function buildCoreArgs({ title, layout, open = true, progress = "json", c
   if (ro) args.push("--reading-order", ro);
   args.push("--progress", progress);
   args.push(open ? "--open" : "--no-open");
+  // 未完了 run の再開可否。true=再開 / false=新規強制。undefined はフラグを付けず
+  // コア既定（再開）に委ねる（未完了 run が無い通常経路では新規になる）。#35
+  if (resume === true) args.push("--resume");
+  else if (resume === false) args.push("--no-resume");
   return args;
 }

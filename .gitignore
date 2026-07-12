@@ -15,6 +15,9 @@ state.json
 # Node（npx フロント。依存は publish 時に解決、CI テストは @clack 非依存で node --test）
 node_modules/
 
+# ウィザードの前回回答を覚えるローカルファイル（利用者ごと・コミット混入させない・#35）
+.kindle2pdf.json
+
 # OS
 .DS_Store
 
