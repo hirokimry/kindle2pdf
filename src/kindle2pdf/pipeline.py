@@ -66,6 +66,10 @@ def resolve_run_dir(
     未完了の run があれば継続し（resume=True 時）、無ければ日時付きの新規ディレクトリを
     作る。これにより 2 回目以降も前回結果を上書きせず、破壊的な削除なしで撮り直せる
     （Issue #31）。now はテスト時に時刻を固定するための注入口。
+
+    同時実行は想定しない（Kindle を 1 つ操作する単発手動実行が前提）。衝突回避の
+    `while run_dir.exists()` は check-then-act のため、同一秒に 2 プロセスが起動すると
+    同じ run ディレクトリを共有し state.json を壊し得る。並行起動しないことを運用前提とする。
     """
     bdir = book_dir(cfg)
     if resume:
