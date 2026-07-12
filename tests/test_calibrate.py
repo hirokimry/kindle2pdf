@@ -96,8 +96,10 @@ def test_run_calibrate_rejects_unmeasured_region(tmp_path, monkeypatch):
 def test_cli_calibrate_success(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     # 生の値が float でも表示は int 正規化後の region になることを確認する。
+    # app_name を明示して resolve_app_name を短絡し、実 osascript / Kindle 実機に依存させない。
     (tmp_path / "config.yaml").write_text(
-        "book_title: t\ncapture:\n  auto_region: false\n  region: [1.9, 2, 300, 400]\n",
+        "book_title: t\ncapture:\n"
+        '  app_name: "Kindle"\n  auto_region: false\n  region: [1.9, 2, 300, 400]\n',
         encoding="utf-8",
     )
     monkeypatch.setattr(
@@ -189,8 +191,10 @@ def test_cli_config_load_error_is_friendly(tmp_path, monkeypatch):
 
 def test_cli_calibrate_invalid_region_errors(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    # app_name を明示して resolve_app_name を短絡し、実 osascript / Kindle 実機に依存させない。
     (tmp_path / "config.yaml").write_text(
-        "book_title: t\ncapture:\n  auto_region: false\n  region: [0, 0, 0, 0]\n",
+        "book_title: t\ncapture:\n"
+        '  app_name: "Kindle"\n  auto_region: false\n  region: [0, 0, 0, 0]\n',
         encoding="utf-8",
     )
 
