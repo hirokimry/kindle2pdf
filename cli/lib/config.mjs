@@ -3,8 +3,7 @@
 // これにより「config.yaml を手編集しなくても npx kindle2pdf が動く」を実現する（Issue #34）。
 // コア本体は改修せず、フロント側で config の存在を吸収する（責務分離）。
 
-import { existsSync, writeFileSync } from "node:fs";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -27,7 +26,18 @@ export function ensureConfig(cwd = process.cwd()) {
   const existing = join(cwd, "config.yaml");
   if (existsSync(existing)) return { path: existing, generated: false };
   const dir = mkdtempSync(join(tmpdir(), "kindle2pdf-"));
-  const tmpConfig = join(dir, "config.yaml");
-  writeFileSync(tmpConfig, renderMinimalConfig(), "utf8");
-  return { path: tmpConfig, generated: true };
+  try {
+    const tmpConfig = join(dir, "config.yaml");
+    writeFileSync(tmpConfig, renderMinimalConfig(), "utf8");
+    return { path: tmpConfig, generated: true };
+  } catch (err) {
+    // 書き込み失敗（ディスクフル等）時は作った temp ディレクトリを片付けてから送出する。
+    // generated=true を返せず呼び出し側の finally も掃除しないため、ここで leak を防ぐ。
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* 片付け失敗は致命でない（OS の tmp が後で回収する） */
+    }
+    throw err;
+  }
 }
