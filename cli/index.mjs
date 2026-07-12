@@ -60,6 +60,9 @@ async function wizard() {
   s.start("撮影を準備中…");
   let lastOutput = "";
   let errorMessage = "";
+  // JSON 化されないコアのエラー（book_title 検証・config 読込失敗などは pipeline.run の
+  // 進捗 try の外で起きるため error イベントにならず stderr に出る）も拾って表示する。
+  let stderrTail = "";
   let code = 1;
   try {
     ({ code } = await runCore({
@@ -70,7 +73,14 @@ async function wizard() {
         if (ev.event === "complete") lastOutput = ev.output ?? "";
         if (ev.event === "error") errorMessage = ev.message ?? "";
       },
+      onStderr: (text) => {
+        // 末尾のみ保持（大量ログでメモリを食わない）。失敗時の原因表示に使う。
+        stderrTail = (stderrTail + text).slice(-600);
+      },
     }));
+  } catch (err) {
+    // spawn 失敗（python3 不在など）はここに来る。スタックトレースで落とさず明確に伝える。
+    errorMessage = err && err.message ? err.message : String(err);
   } finally {
     // 生成した temp config は撮影後に破棄する（cwd は汚さない）。失敗は無視する。
     if (generated) {
@@ -88,7 +98,9 @@ async function wizard() {
     return 0;
   }
   s.stop("❌ 失敗");
-  p.cancel(errorMessage ? `撮影に失敗しました: ${errorMessage}` : "撮影に失敗しました。");
+  // error イベント > stderr 末尾 の順で最も具体的な原因を見せる。
+  const detail = errorMessage || stderrTail.trim();
+  p.cancel(detail ? `撮影に失敗しました: ${detail}` : "撮影に失敗しました。ログを確認してください。");
   return code || 1;
 }
 

@@ -41,11 +41,13 @@ export function runCore({
     child.stderr?.on("data", (chunk) => onStderr(String(chunk)));
 
     child.on("error", (err) => reject(err));
-    child.on("close", (code) => {
+    child.on("close", (code, signal) => {
       // 末尾に改行なしで残った最終行も処理する。
       const ev = parseProgressLine(buf);
       if (ev) onEvent(ev);
-      resolve({ code: code ?? 0 });
+      // シグナルで強制終了された場合 Node は code=null, signal="SIGKILL" 等を渡す。
+      // signal を無視して code ?? 0 とすると成功扱いになるため、シグナル終了は失敗(1)にする。
+      resolve({ code: code ?? (signal ? 1 : 0), signal: signal ?? null });
     });
   });
 }

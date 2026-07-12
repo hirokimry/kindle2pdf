@@ -78,6 +78,25 @@ test("runCore: 非ゼロ終了は reject せず code を返す", async () => {
   assert.equal(events[0].event, "error");
 });
 
+test("runCore: シグナルで強制終了された場合は成功扱いにしない（code=1, signal 反映）", async () => {
+  const { impl } = fakeSpawn((child) => {
+    // Node は SIGKILL 等で終了すると code=null, signal="SIGKILL" を渡す。
+    child.emit("close", null, "SIGKILL");
+  });
+  const { code, signal } = await runCore({ args: ["run"], spawnImpl: impl });
+  assert.equal(code, 1);
+  assert.equal(signal, "SIGKILL");
+});
+
+test("runCore: 正常終了は signal=null で code をそのまま返す", async () => {
+  const { impl } = fakeSpawn((child) => {
+    child.emit("close", 0, null);
+  });
+  const { code, signal } = await runCore({ args: ["run"], spawnImpl: impl });
+  assert.equal(code, 0);
+  assert.equal(signal, null);
+});
+
 test("runCore: spawn 自体のエラーは reject する", async () => {
   const impl = () => {
     const child = new EventEmitter();
