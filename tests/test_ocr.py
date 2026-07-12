@@ -38,6 +38,58 @@ def test_module_imports_without_ocrmac():
     importlib.import_module("kindle2pdf.ocr")
 
 
+# --- 見開き2カラムの読み順（order_reading_items）---------------------------------
+# bbox=[x, y, w, h] 正規化(0..1)・原点左下（y 大 = 上）。見開き分割廃止（Issue #29）で
+# 1 ページが 2 カラムになり得るため、列認識で読み順が破綻しないことを検証する。
+
+
+def _texts(items: list[ocr.OcrItem]) -> list[str]:
+    return [t for t, _c, _b in items]
+
+
+# わざと交互（左下→右上→左上→右下）に並べ、ソートで読み順が正されることを示す入力
+_SPREAD_SCRAMBLED: list[ocr.OcrItem] = [
+    ("左下", 0.9, [0.1, 0.3, 0.3, 0.05]),
+    ("右上", 0.9, [0.6, 0.8, 0.3, 0.05]),
+    ("左上", 0.9, [0.1, 0.8, 0.3, 0.05]),
+    ("右下", 0.9, [0.6, 0.3, 0.3, 0.05]),
+]
+
+
+def test_spread_rtl_reads_right_column_first():
+    """2カラム見開きは rtl で 右列(上→下)→左列(上→下) の読み順になる（漫画・縦書き）。"""
+    ordered = ocr.order_reading_items(_SPREAD_SCRAMBLED, "rtl")
+    assert _texts(ordered) == ["右上", "右下", "左上", "左下"]
+
+
+def test_spread_ltr_reads_left_column_first():
+    """2カラム見開きは ltr で 左列(上→下)→右列(上→下) の読み順になる（横書き）。"""
+    ordered = ocr.order_reading_items(_SPREAD_SCRAMBLED, "ltr")
+    assert _texts(ordered) == ["左上", "左下", "右上", "右下"]
+
+
+def test_single_column_full_width_lines_keep_top_to_bottom():
+    """中心線をまたぐ全幅行がある片ページは左右に割らず 上→下ソートのみになる。
+
+    全幅行を誤って左右カラムに割ると読み順が壊れるため、単一カラム退避を検証する。
+    """
+    scrambled: list[ocr.OcrItem] = [
+        ("2行目", 0.9, [0.1, 0.5, 0.8, 0.05]),
+        ("3行目", 0.9, [0.1, 0.2, 0.8, 0.05]),
+        ("1行目", 0.9, [0.1, 0.8, 0.8, 0.05]),  # 0.1..0.9 が中心 0.5 をまたぐ
+    ]
+    # rtl でも「右列→左列」に割らず上→下のまま（全幅行があるので単一カラム扱い）
+    ordered = ocr.order_reading_items(scrambled, "rtl")
+    assert _texts(ordered) == ["1行目", "2行目", "3行目"]
+
+
+def test_single_item_is_returned_as_is():
+    """要素が1つ以下ならそのまま返す（並べ替え不要）。"""
+    one: list[ocr.OcrItem] = [("only", 0.9, [0.1, 0.5, 0.2, 0.05])]
+    assert ocr.order_reading_items(one, "rtl") == one
+    assert ocr.order_reading_items([], "rtl") == []
+
+
 def test_ocr_all_writes_json_per_page(tmp_path, monkeypatch):
     monkeypatch.setattr(ocr, "ocr_page", lambda path, cfg: _fake_items(path))
     _make_pages(tmp_path, ["page_0001.png", "page_0002.png"])

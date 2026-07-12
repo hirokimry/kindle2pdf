@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# P4(見開き分割＋トリミング)の検証。
+# P4(トリミング・1 撮影 = 1 ページ)の検証。
 # vibecorp CI（test.yml）が glob する tests/test_*.sh 形式。
 #
-# process_all の中核ロジック（見開き2N分割・config切替・黒画面除外・冪等クリア・
-# レジューム）を pytest で実際に実行して検証する。合成画像で自己完結するため
-# 著作物に依存せず macOS / Linux(CI) の双方で緑になる。
+# process_all の中核ロジック（1 撮影 = 1 ページ・トリミング・黒画面除外・冪等クリア・
+# レジューム）を pytest で実際に実行して検証する。見開きの左右分割は廃止した（Issue #29）。
+# 合成画像で自己完結するため著作物に依存せず macOS / Linux(CI) の双方で緑になる。
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-# 本テストは実際に画像を分割・書き出して検証するため python を必須とする
+# 本テストは実際に画像をトリミング・書き出して検証するため python を必須とする
 if command -v python3 >/dev/null 2>&1; then
   PY=python3
 elif command -v python >/dev/null 2>&1; then

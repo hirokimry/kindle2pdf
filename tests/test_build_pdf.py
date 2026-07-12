@@ -178,6 +178,26 @@ def test_multipage_each_page_searchable(tmp_path):
         assert WORD_BOTTOM in text
 
 
+def test_spread_image_becomes_wide_landscape_page(tmp_path):
+    """見開き1枚（横長画像）がそのまま横長 PDF ページになる（Issue #29・分割しない）。"""
+    spread_w, spread_h = 1200, 800  # 全画面幅の見開き相当（横長）
+    img = tmp_path / "spread.png"
+    Image.new("RGB", (spread_w, spread_h), (255, 255, 255)).save(img)
+    out = tmp_path / "spread.pdf"
+    cfg = Config()
+    # 分割せず1枚をそのまま1ページとして積む
+    build([(str(img), [])], out, cfg)
+
+    reader = PdfReader(str(out))
+    assert len(reader.pages) == 1
+    f = 72.0 / cfg.build.target_dpi
+    box = reader.pages[0].mediabox
+    # 横長画像 → 横長ページ（幅 > 高さ）。分割していれば幅は半分になり縦長寄りになる
+    assert float(box.width) > float(box.height)
+    assert abs(float(box.width) - spread_w * f) <= TOL
+    assert abs(float(box.height) - spread_h * f) <= TOL
+
+
 def test_empty_text_items_are_skipped(tmp_path):
     """空文字の bbox は不可視テキストを生まない（build_pdf のスキップ挙動）。"""
     img = tmp_path / "page.png"

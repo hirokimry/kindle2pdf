@@ -39,9 +39,6 @@ class CaptureConfig:
     # （本文の白余白・柱は一切削らない）。Kindle 自身の進捗フッター等は Kindle の表示設定で
     # 消す運用。false で静的 region。通常ウィンドウ表示前提（全画面は自動ページ送り不可）。
     auto_region: bool = True
-    # 見開き2ページ表示か（true=左右分割する / false=片ページで分割しない）。
-    # 見開き/片ページの切替はこのフラグ 1 つで決まる（preprocess が参照する唯一のスイッチ）。
-    spread_mode: bool = True
     # Kindle アプリの AppleScript 名。環境により "Amazon Kindle" 等になる
     # （`tell application "Kindle"` が -1728 で失敗する環境がある）。
     app_name: str = "Kindle"
@@ -69,7 +66,10 @@ class PreprocessConfig:
 class OcrConfig:
     languages: list[str] = field(default_factory=lambda: ["ja-JP", "en-US"])
     recognition_level: str = "accurate"
-    reading_order: str = "split"
+    # 見開き（2カラム）ページを列認識で読み順に並べる方向。
+    # rtl=右列→左列（漫画・縦書きの見開き） / ltr=左列→右列（横書き）。
+    # 片ページ（単一カラム）では方向は結果に影響しない（上→下ソートのみ）。
+    reading_order: str = "rtl"
 
 
 @dataclass
@@ -92,14 +92,24 @@ class Config:
     def load(cls, path: str | Path) -> "Config":
         """config.yaml を読み込んで Config を構築する。未指定キーは既定値。"""
         raw = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
-        # 廃止キー split_spread は cryptic な TypeError ではなく移行を促す明確なエラーにする。
-        # 見開き/片ページの切替は capture.spread_mode に統一された（旧 preprocess.split_spread）。
+        # 見開き左右分割は廃止された（Issue #29）。見開き/片ページは Kindle のウィンドウ幅で
+        # 選ぶ運用に変わり、撮影は常に「ウィンドウ中身をそのまま 1 撮影 = 1 ページ」で撮る。
+        # 廃止キー spread_mode / split_spread が残っていたら、サイレントに挙動を変えず
+        # cryptic な TypeError でもなく、移行を促す明確なエラーで弾く。
+        _migration = (
+            "見開きの左右分割は廃止され、1 撮影 = 1 ページになりました。"
+            "見開き/片ページは Kindle のウィンドウ幅で選びます"
+            "（半画面幅=片ページ / 全画面幅=見開き 1 枚）。"
+        )
+        if isinstance(raw.get("capture"), dict) and "spread_mode" in raw["capture"]:
+            raise ValueError(
+                "capture.spread_mode は廃止されました。" + _migration
+                + "config.yaml の capture.spread_mode 行を削除してください。"
+            )
         if isinstance(raw.get("preprocess"), dict) and "split_spread" in raw["preprocess"]:
             raise ValueError(
-                "preprocess.split_spread は廃止されました。"
-                "見開き/片ページの切替は capture.spread_mode を使ってください"
-                "（true=見開き左右分割 / false=片ページ）。"
-                "config.yaml の preprocess.split_spread 行を削除してください。"
+                "preprocess.split_spread は廃止されました。" + _migration
+                + "config.yaml の preprocess.split_spread 行を削除してください。"
             )
         return cls(
             book_title=raw.get("book_title", "sample-book"),
@@ -116,6 +126,16 @@ class Config:
             validate_region(self.capture.region)
         if self.capture.page_turn_key not in ("right", "left"):
             raise ValueError("capture.page_turn_key は right / left のいずれか。")
+        # reading_order は列認識の読み順方向。旧値 split / column（分割前提のデッド定義）は
+        # 分割廃止で意味を失ったため、移行を促す明確なエラーで弾く。
+        if self.ocr.reading_order not in ("rtl", "ltr"):
+            if self.ocr.reading_order in ("split", "column"):
+                raise ValueError(
+                    "ocr.reading_order の split / column は廃止されました。"
+                    "見開き（2カラム）の読み順方向を rtl（右→左・漫画/縦書き）"
+                    "または ltr（左→右・横書き）で指定してください。"
+                )
+            raise ValueError("ocr.reading_order は rtl / ltr のいずれか。")
         fmt = self.build.image_format.lower()
         if fmt not in ("jpeg", "jpg", "png"):
             raise ValueError("build.image_format は jpeg / png のいずれか。")
