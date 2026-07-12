@@ -18,7 +18,8 @@ function passthrough(args) {
   return new Promise((resolve) => {
     const py = resolvePython();
     const child = spawn(py, ["-m", "kindle2pdf", ...args], { stdio: "inherit" });
-    child.on("close", (code) => resolve(code ?? 0));
+    // シグナル終了（code=null, signal="SIGKILL" 等）を成功扱いにしない（runner と同じ規約）。
+    child.on("close", (code, signal) => resolve(code ?? (signal ? 1 : 0)));
     child.on("error", (err) => {
       // spawn 失敗（python3 不在等）は stdio:inherit でも何も出ないので明示して伝える。
       process.stderr.write(`kindle2pdf: Python コアを起動できません（${py}）: ${err.message}\n`);

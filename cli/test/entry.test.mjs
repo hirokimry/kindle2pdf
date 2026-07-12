@@ -55,3 +55,16 @@ test("passthrough: コアの終了コードをそのまま伝播する", () => {
   });
   assert.equal(res.status, 3);
 });
+
+test("passthrough: コアがシグナルで死んだら成功扱いにしない（非ゼロ終了）", () => {
+  const dir = mkdtempSync(join(tmpdir(), "k2p-fakepy-"));
+  const fake = join(dir, "fakepy.mjs");
+  // 自分自身を SIGTERM で殺す → Node は close(code=null, signal="SIGTERM") を渡す。
+  writeFileSync(fake, '#!/usr/bin/env node\nprocess.kill(process.pid, "SIGTERM");\n', "utf8");
+  chmodSync(fake, 0o755);
+  const res = spawnSync("node", [ENTRY, "run"], {
+    env: { ...process.env, KINDLE2PDF_PYTHON: fake },
+    encoding: "utf8",
+  });
+  assert.equal(res.status, 1); // code=null を 0 にせず失敗として伝える
+});
