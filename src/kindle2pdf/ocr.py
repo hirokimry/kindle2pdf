@@ -140,7 +140,7 @@ def ocr_all(
     - OCR完了数を state.ocr_done に記録する（state_path 指定時はページ毎に永続化）。
     - OCR失敗ページはログに記録して処理を継続する（JSON未作成→再開時に再試行される）。
 
-    work_dir 未指定時は work/<book_title> を用いる（pipeline.work_dir と同一規約）。
+    work_dir 未指定時は work/<book_title> を用いる（pipeline.book_dir と同一規約）。
     """
     if state is None:
         state = State()
