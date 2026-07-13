@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 
 import { resolvePython, runCore } from "../lib/runner.mjs";
@@ -19,12 +22,24 @@ function fakeSpawn(script) {
   return { impl, captured };
 }
 
-test("resolvePython: 環境変数 KINDLE2PDF_PYTHON を優先、既定は python3", () => {
+test("resolvePython: KINDLE2PDF_PYTHON 最優先 → .venv 自動検出 → python3", () => {
   const saved = process.env.KINDLE2PDF_PYTHON;
   delete process.env.KINDLE2PDF_PYTHON;
-  assert.equal(resolvePython(), "python3");
+
+  // .venv が無いディレクトリでは python3 にフォールバックする。
+  const noVenv = mkdtempSync(join(tmpdir(), "k2p-novenv-"));
+  assert.equal(resolvePython(noVenv), "python3");
+
+  // .venv/bin/python3 があれば自動検出してそのパスを返す（有効化不要）。
+  const withVenv = mkdtempSync(join(tmpdir(), "k2p-venv-"));
+  mkdirSync(join(withVenv, ".venv", "bin"), { recursive: true });
+  writeFileSync(join(withVenv, ".venv", "bin", "python3"), "");
+  assert.equal(resolvePython(withVenv), join(withVenv, ".venv", "bin", "python3"));
+
+  // KINDLE2PDF_PYTHON は .venv より優先される（明示指定が最優先）。
   process.env.KINDLE2PDF_PYTHON = "/venv/bin/python";
-  assert.equal(resolvePython(), "/venv/bin/python");
+  assert.equal(resolvePython(withVenv), "/venv/bin/python");
+
   if (saved === undefined) delete process.env.KINDLE2PDF_PYTHON;
   else process.env.KINDLE2PDF_PYTHON = saved;
 });
