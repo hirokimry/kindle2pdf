@@ -37,7 +37,8 @@ logger = logging.getLogger(__name__)
 # 返り値要素: (text, confidence, [x, y, w, h])  座標は正規化(0..1)・原点左下
 OcrItem = tuple[str, float, list[float]]
 
-# Google Cloud Vision REST。鍵はクエリパラメータで渡す（key=<API key>）。
+# Google Cloud Vision REST。鍵は X-Goog-Api-Key ヘッダで渡す（URL に乗せないことで
+# http.client のデバッグログやプロキシ経由での鍵漏洩リスクを避ける）。
 GOOGLE_VISION_ENDPOINT = "https://vision.googleapis.com/v1/images:annotate"
 GOOGLE_API_KEY_ENV = "GOOGLE_VISION_API_KEY"
 # 1 ページの HTTP タイムアウト（秒）。クラウド OCR の応答遅延を見込みつつ無限待ちを防ぐ。
@@ -140,9 +141,12 @@ def _ocr_page_google(path: str | Path) -> list[OcrItem]:
         }
     ).encode("utf-8")
     req = urllib.request.Request(
-        f"{GOOGLE_VISION_ENDPOINT}?key={api_key}",
+        GOOGLE_VISION_ENDPOINT,
         data=body,
-        headers={"Content-Type": "application/json; charset=utf-8"},
+        headers={
+            "Content-Type": "application/json; charset=utf-8",
+            "X-Goog-Api-Key": api_key,
+        },
         method="POST",
     )
     try:
@@ -152,6 +156,12 @@ def _ocr_page_google(path: str | Path) -> list[OcrItem]:
         # 鍵無効・課金未有効・quota 超過等はここに来る。本文にエラー詳細が入るので拾って上げる。
         detail = exc.read().decode("utf-8", errors="replace")
         raise RuntimeError(f"Google Vision API エラー（HTTP {exc.code}）: {detail}") from exc
+    except urllib.error.URLError as exc:
+        # DNS 失敗・接続拒否・タイムアウト等のネットワーク障害。HTTPError の後に置く
+        # （HTTPError は URLError のサブクラスなので順序が逆だと拾えない）。
+        raise RuntimeError(
+            f"Google Vision API 接続エラー（ネットワーク障害またはタイムアウト）: {exc.reason}"
+        ) from exc
     # 応答に per-request の error が入る形式もあるため純関数側で検出させる
     return _google_items_from_response(data)
 
