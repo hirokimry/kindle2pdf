@@ -42,6 +42,11 @@ class PreprocessConfig:
 
 @dataclass
 class OcrConfig:
+    # OCR エンジン。apple=Apple Vision（既定・端末内完結・無料・macOS 専用）/
+    # google=Google Cloud Vision（クラウド送信・従量課金・手描き/崩し字に強い、Issue #56）。
+    # 既定を apple に据えることで既存利用者の挙動を変えない。languages / recognition_level は
+    # apple 専用パラメータ（google は言語ヒントを内部で ja/en 固定にする）。
+    engine: str = "apple"
     languages: list[str] = field(default_factory=lambda: ["ja-JP", "en-US"])
     recognition_level: str = "accurate"
     # 見開き（2カラム）ページを列認識で読み順に並べる方向。
@@ -139,6 +144,11 @@ class Config:
                     "または ltr（左→右・横書き）で指定してください。"
                 )
             raise ValueError("ocr.reading_order は rtl / ltr のいずれか。")
+        # engine は apple（端末内 Apple Vision）/ google（クラウド Google Cloud Vision）のみ。
+        # google 選択時の鍵（GOOGLE_VISION_API_KEY）不在は撮影前の validate では弾かず、
+        # OCR 段の開始時に明確なエラーで止める（ocr.ocr_all）。
+        if self.ocr.engine not in ("apple", "google"):
+            raise ValueError("ocr.engine は apple / google のいずれか。")
         fmt = self.build.image_format.lower()
         if fmt not in ("jpeg", "jpg", "png"):
             raise ValueError("build.image_format は jpeg / png のいずれか。")

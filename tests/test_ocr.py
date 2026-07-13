@@ -218,6 +218,126 @@ def test_ocr_all_defaults_work_dir_and_state(tmp_path, monkeypatch):
     assert (tmp_path / "work" / "my-book" / "ocr" / "page_0001.json").exists()
 
 
+# --- Google Cloud Vision backend（Issue #56）------------------------------------
+# 応答パースは純関数 _google_items_from_response でネット非依存に検証する。
+# Apple 同形の (text, confidence, [x, y, w, h]) 正規化(0..1)・原点左下へ変換されること。
+
+
+def _google_response(paragraphs: list[dict], width: int = 100, height: int = 200) -> dict:
+    """paragraphs を 1 block に詰めた Vision annotate 応答を組み立てる。"""
+    return {
+        "responses": [
+            {
+                "fullTextAnnotation": {
+                    "pages": [
+                        {"width": width, "height": height, "blocks": [{"paragraphs": paragraphs}]}
+                    ]
+                }
+            }
+        ]
+    }
+
+
+def test_google_parse_pixel_vertices_flip_y():
+    """pixel 頂点（原点左上）が 正規化・原点左下 [x, y, w, h] に変換される。"""
+    para = {
+        "confidence": 0.9,
+        "boundingBox": {
+            "vertices": [
+                {"x": 10, "y": 20},
+                {"x": 90, "y": 20},
+                {"x": 90, "y": 40},
+                {"x": 10, "y": 40},
+            ]
+        },
+        "words": [{"symbols": [{"text": "本"}, {"text": "文"}]}],
+    }
+    items = ocr._google_items_from_response(_google_response([para]))
+    assert len(items) == 1
+    text, conf, bbox = items[0]
+    assert text == "本文"
+    assert conf == 0.9
+    # x=10/100, w=80/100, y=1-40/200=0.8, h=20/200=0.1
+    assert bbox == [0.1, 0.8, 0.8, 0.1]
+
+
+def test_google_parse_prefers_normalized_vertices():
+    """normalizedVertices があれば width/height 非依存でそのまま使う。"""
+    para = {
+        "boundingBox": {
+            "normalizedVertices": [
+                {"x": 0.1, "y": 0.1},
+                {"x": 0.5, "y": 0.1},
+                {"x": 0.5, "y": 0.3},
+                {"x": 0.1, "y": 0.3},
+            ]
+        },
+        "words": [{"symbols": [{"text": "a"}]}],
+    }
+    # width/height を 0 にしても normalizedVertices 経路なら壊れない
+    items = ocr._google_items_from_response(_google_response([para], width=0, height=0))
+    _t, _c, bbox = items[0]
+    assert bbox == pytest.approx([0.1, 0.7, 0.4, 0.2])
+
+
+def test_google_parse_treats_omitted_coord_as_zero():
+    """Vision は 0 の座標フィールドを省略する。欠損 x/y は 0 とみなす。"""
+    # 左上頂点が原点 → x が省略される実データ形状
+    bbox = ocr._google_norm_bbox(
+        {"vertices": [{"y": 0}, {"x": 50, "y": 0}, {"x": 50, "y": 10}, {"y": 10}]},
+        width=100,
+        height=100,
+    )
+    # min_x=0, max_x=0.5, y=1-10/100=0.9, h=0.1
+    assert bbox == [0.0, 0.9, 0.5, 0.1]
+
+
+def test_google_paragraph_text_space_only_on_space_break():
+    """SPACE / SURE_SPACE は半角空白を補完し、行末(LINE_BREAK)では補完しない。"""
+    para = {
+        "words": [
+            {"symbols": [{"text": "A", "property": {"detectedBreak": {"type": "SPACE"}}}]},
+            {"symbols": [{"text": "B", "property": {"detectedBreak": {"type": "LINE_BREAK"}}}]},
+            {"symbols": [{"text": "C"}]},
+        ]
+    }
+    # A + 空白 + B（行末は空白なし）+ C
+    assert ocr._google_paragraph_text(para) == "A BC"
+
+
+def test_google_parse_empty_when_no_full_text():
+    """テキスト検出なし（fullTextAnnotation 不在）は空リストを返す。"""
+    assert ocr._google_items_from_response({"responses": [{}]}) == []
+
+
+def test_google_parse_raises_on_api_error():
+    """応答内 error（課金未有効・quota 超過等）は明確な例外にする。"""
+    resp = {"responses": [{"error": {"code": 7, "message": "billing disabled"}}]}
+    with pytest.raises(RuntimeError, match="Google Vision API エラー"):
+        ocr._google_items_from_response(resp)
+
+
+def test_google_parse_skips_degenerate_bbox():
+    """サイズ 0 の矩形（幅 or 高さ 0）は item に含めない。"""
+    para = {
+        "boundingBox": {
+            "vertices": [{"x": 10, "y": 20}, {"x": 10, "y": 20}, {"x": 10, "y": 40}, {"x": 10, "y": 40}]
+        },
+        "words": [{"symbols": [{"text": "x"}]}],
+    }
+    assert ocr._google_items_from_response(_google_response([para])) == []
+
+
+def test_ocr_all_google_missing_key_raises(tmp_path, monkeypatch):
+    """engine=google で鍵未設定なら、全ページ失敗の空 PDF ではなく即エラーで止める。"""
+    monkeypatch.delenv(ocr.GOOGLE_API_KEY_ENV, raising=False)
+    _make_pages(tmp_path, ["page_0001.png"])
+    cfg = Config()
+    cfg.ocr.engine = "google"
+    with pytest.raises(RuntimeError, match=ocr.GOOGLE_API_KEY_ENV):
+        ocr.ocr_all(cfg, State(), work_dir=tmp_path)
+
+
 def test_load_page_items_roundtrip(tmp_path, monkeypatch):
     """保存した JSON を load_page_items で OcrItem タプルへ復元できる。"""
     monkeypatch.setattr(ocr, "ocr_page", lambda path, cfg: _fake_items(path))

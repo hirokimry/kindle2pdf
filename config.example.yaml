@@ -25,8 +25,12 @@ preprocess:
   min_brightness: 20              # これ未満は黒画面異常として除外
 
 ocr:
-  languages: ["ja-JP", "en-US"]
-  recognition_level: "accurate"   # accurate | fast
+  # OCRエンジン: apple(既定・端末内Apple Vision・無料・macOS専用) | google(Google Cloud Vision)
+  # google はクラウド送信・従量課金だが手描き/崩し字/極小文字に強い。鍵は環境変数
+  # GOOGLE_VISION_API_KEY で渡す（config にはコミットしない）。既定 apple なら従来どおり。
+  engine: "apple"
+  languages: ["ja-JP", "en-US"]   # apple 専用（google は内部で ja/en 固定）
+  recognition_level: "accurate"   # accurate | fast（apple 専用）
   reading_order: "rtl"            # 見開き2カラムの読み順方向: rtl(右→左・漫画/縦書き) | ltr(左→右・横書き)
 
 build:
