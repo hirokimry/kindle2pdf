@@ -332,6 +332,49 @@ def test_detect_window_id_picks_largest_layer0_kindle(monkeypatch):
     assert pid == 555  # AX でタイトルバーを実測するため本体ウィンドウの PID を返す
 
 
+def test_detect_window_id_excludes_unnamed_junk_windows(monkeypatch):
+    """Kindle が裏で作る名前なしの黒いゴミ窓（面積が大きくても）を除外し、名前を持つ
+    本文ウィンドウを選ぶ（config/calibrate なしで黒画面事故を防ぐ回帰テスト）。"""
+    windows = [
+        # 名前なしの黒いゴミ窓。面積は本文窓より大きいが本体ではない。
+        {"kCGWindowOwnerName": "Kindle", "kCGWindowLayer": 0, "kCGWindowNumber": 99,
+         "kCGWindowName": "",
+         "kCGWindowOwnerPID": 555,
+         "kCGWindowBounds": {"X": 0, "Y": 456, "Width": 2000, "Height": 2000}},
+        # 名前ありの本文ウィンドウ。面積は小さいがこれが本体。
+        {"kCGWindowOwnerName": "Kindle", "kCGWindowLayer": 0, "kCGWindowNumber": 11,
+         "kCGWindowName": "Kindle",
+         "kCGWindowOwnerPID": 555,
+         "kCGWindowBounds": {"X": 735, "Y": 37, "Width": 735, "Height": 919}},
+        # 名前なしの細い帯。除外対象。
+        {"kCGWindowOwnerName": "Kindle", "kCGWindowLayer": 0, "kCGWindowNumber": 22,
+         "kCGWindowName": "",
+         "kCGWindowOwnerPID": 555,
+         "kCGWindowBounds": {"X": 0, "Y": 0, "Width": 1470, "Height": 36}},
+    ]
+    monkeypatch.setattr(capture, "Quartz", _FakeQuartz(windows))
+    wid, rect, pid = capture.detect_window_id("Amazon Kindle")
+    assert wid == 11  # 面積最大の黒ゴミ窓(99)ではなく名前ありの本体を選ぶ
+    assert rect == (735, 37, 735, 919)
+
+
+def test_detect_window_id_falls_back_to_area_when_no_names(monkeypatch):
+    """全ウィンドウが名前なし（画面収録権限未付与等）なら従来の面積最大にフォールバックする。"""
+    windows = [
+        {"kCGWindowOwnerName": "Kindle", "kCGWindowLayer": 0, "kCGWindowNumber": 11,
+         "kCGWindowName": "",
+         "kCGWindowOwnerPID": 555,
+         "kCGWindowBounds": {"X": 0, "Y": 36, "Width": 1470, "Height": 920}},
+        {"kCGWindowOwnerName": "Kindle", "kCGWindowLayer": 0, "kCGWindowNumber": 22,
+         "kCGWindowName": "",
+         "kCGWindowOwnerPID": 555,
+         "kCGWindowBounds": {"X": 0, "Y": 0, "Width": 800, "Height": 600}},
+    ]
+    monkeypatch.setattr(capture, "Quartz", _FakeQuartz(windows))
+    wid, rect, pid = capture.detect_window_id("Amazon Kindle")
+    assert wid == 11  # 名前が無ければ面積最大を選ぶ（後方互換）
+
+
 def test_detect_window_id_warns_on_multiple_candidates(monkeypatch, caplog):
     """Kindle ウィンドウが複数見つかったら警告を出す（誤ウィンドウのサイレント撮影を防ぐ）。"""
     windows = [
