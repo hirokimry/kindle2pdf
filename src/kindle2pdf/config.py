@@ -2,43 +2,17 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
 
-
-def validate_region(region: list[int]) -> tuple[int, int, int, int]:
-    """capture.region を [x, y, width, height] として検証し正規化する。
-
-    calibrate / capture が撮影前に共通で使う単一の検証点。未設定の
-    [0, 0, 0, 0] や要素数・型の不正、幅高さ 0 以下を明確な ValueError で弾く。
-    x / y はマルチモニタで負値を取り得るため符号は問わない。
-    """
-    if not isinstance(region, (list, tuple)) or len(region) != 4:
-        raise ValueError(
-            "capture.region は [x, y, width, height] の 4 要素で指定してください。"
-        )
-    try:
-        x, y, w, h = (int(v) for v in region)
-    except (TypeError, ValueError):
-        raise ValueError("capture.region の各要素は整数で指定してください。") from None
-    if w <= 0 or h <= 0:
-        raise ValueError(
-            "capture.region の width/height が 0 以下です（未実測の可能性）。"
-            "`kindle2pdf calibrate` で読書領域 [x, y, w, h] を実測してください。"
-        )
-    return x, y, w, h
+logger = logging.getLogger(__name__)
 
 
 @dataclass
 class CaptureConfig:
-    region: list[int] = field(default_factory=lambda: [0, 0, 0, 0])
-    # ウィンドウを自動検出して撮影領域に使うか。true なら静的 region を無視し、毎回 Kindle
-    # ウィンドウを検出して `-l` で撮り、AX 実測の macOS タイトルバー帯だけを上端クロップする
-    # （本文の白余白・柱は一切削らない）。Kindle 自身の進捗フッター等は Kindle の表示設定で
-    # 消す運用。false で静的 region。通常ウィンドウ表示前提（全画面は自動ページ送り不可）。
-    auto_region: bool = True
     # Kindle アプリの AppleScript / ウィンドウ名。空なら実行時に候補（"Amazon Kindle" →
     # "Kindle"）を順に試して自動検出しキャッシュする（#33）。環境により名前が違う
     # （新しめの Mac 版は "Amazon Kindle"、`tell application "Kindle"` が -1728 で失敗する
@@ -113,16 +87,27 @@ class Config:
                 "preprocess.split_spread は廃止されました。" + _migration
                 + "config.yaml の preprocess.split_spread 行を削除してください。"
             )
+        # 静的 region フォールバックは廃止された（Issue #47）。auto_region による自動検出に
+        # 一本化されたため、既存 config.yaml に残る region / auto_region キーは CaptureConfig に
+        # 渡す前に取り除き未知キー TypeError を防ぐ。auto_region: false を明示していたユーザーに
+        # だけ撮影方式が auto へ変わることを warning で知らせる（true・未記載はサイレント無視）。
+        capture_raw = dict(raw.get("capture") or {})
+        if capture_raw.pop("auto_region", None) is False:
+            logger.warning(
+                "capture.auto_region: false は廃止されました。"
+                "静的 region 撮影は無くなり、常に Kindle ウィンドウ自動検出で撮影します。"
+            )
+        capture_raw.pop("region", None)
         return cls(
             book_title=raw.get("book_title", "sample-book"),
-            capture=CaptureConfig(**(raw.get("capture") or {})),
+            capture=CaptureConfig(**capture_raw),
             preprocess=PreprocessConfig(**(raw.get("preprocess") or {})),
             ocr=OcrConfig(**(raw.get("ocr") or {})),
             build=BuildConfig(**(raw.get("build") or {})),
         )
 
     def validate(self) -> None:
-        """最低限の妥当性検証。region 未実測などをここで弾く。"""
+        """最低限の妥当性検証。book_title・page_turn_key・reading_order などをここで弾く。"""
         # book_title は work/<book_title>/<日時>/ のディレクトリ名になる。パス区切りや
         # 相対参照を含むと work/ の外に run ディレクトリが作られ既存ファイルを上書きしうる。
         # --title でフロント（npx kindle2pdf）の回答が直接渡るため、想定外タイトルを明確な
@@ -140,9 +125,6 @@ class Config:
                 "work/<book_title>/ のフォルダ名になるため、書名にこれらが含まれる場合は "
                 "「_」等へ置き換えてください。"
             )
-        # auto_region 時は実行時にウィンドウから領域を算出するため静的 region 検証は不要。
-        if not self.capture.auto_region:
-            validate_region(self.capture.region)
         if self.capture.page_turn_key not in ("right", "left"):
             raise ValueError("capture.page_turn_key は right / left のいずれか。")
         # reading_order は列認識の読み順方向。旧値 split / column（分割前提のデッド定義）は

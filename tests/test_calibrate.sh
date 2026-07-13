@@ -34,7 +34,6 @@ assert_absent() {
 echo "=== calibrate(P1) 構造確認 ==="
 assert_absent "$CLI" 'P1: calibrate を実装する' "calibrate が未実装スタブでなくなった"
 assert_contains "$CAPTURE" 'def run_calibrate' "capture に run_calibrate が定義された"
-assert_contains "$CONFIG" 'def validate_region' "config に共通 region 検証が定義された"
 assert_contains "$CLI" 'run_calibrate' "cli が run_calibrate を呼ぶ"
 
 echo "=== Python 構文チェック（py_compile） ==="
