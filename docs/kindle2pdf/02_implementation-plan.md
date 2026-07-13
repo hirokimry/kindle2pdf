@@ -4,6 +4,10 @@
 > **前提**: macOS / Homebrew Python 3.12 + venv / OCR=Apple Vision(`ocrmac`) / 撮影=`screencapture` CLI
 > **作成日**: 2026-07-09
 
+> [!WARNING]
+> 本書は実装着手時点の計画記録です。**静的 region フォールバック（`capture.region` / `auto_region: false`・`activate_kindle` / `validate_region`・`screencapture -R` による領域撮影）は Issue #47 で廃止されました**。撮影は常に Kindle ウィンドウ自動検出（旧 auto_region）で行います。
+> 現行の設定・撮影仕様は `README.md` と `config.example.yaml` を正とします。計画記録としての正確性のため本文は当時のまま残します。
+
 ---
 
 ## 📁 1. リポジトリ構成
