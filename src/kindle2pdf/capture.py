@@ -177,9 +177,10 @@ def detect_window_id(
     （`detect_titlebar_pt`）、上端だけを動的にクロップして落とす。本の白余白・ヘッダー/
     フッターはウィンドウの中身なので忠実に残す。
 
-    全ウィンドウから app 名一致・レイヤ0・最大面積のものを本体とみなし、小さな補助
-    ウィンドウを除外する。System Events のプロセス名は app 名と異なることがあるため
-    app_name の末尾語で部分一致させる。PID は AX でタイトルバーを実測するために返す。
+    全ウィンドウから app 名一致・レイヤ0 を候補とし、Kindle が裏で生成する **名前なしの
+    ゴミウィンドウ**（黒い補助窓・細い帯）を除外するため、ウィンドウ名を持つ候補があれば
+    それだけに絞ってから最大面積を本体とみなす。System Events のプロセス名は app 名と異なる
+    ことがあるため app_name の末尾語で部分一致させる。PID は AX でタイトルバーを実測するために返す。
     """
     if Quartz is None:
         raise RuntimeError(
@@ -189,9 +190,9 @@ def detect_window_id(
     wins = Quartz.CGWindowListCopyWindowInfo(
         Quartz.kCGWindowListOptionAll, Quartz.kCGNullWindowID
     )
-    # (面積, id, 矩形, pid)。候補が複数出る（2冊同時・設定/検索パネル等）ときは
-    # 面積最大を本体とみなすが、誤ウィンドウをサイレントに撮り続ける事故を避けるため警告する。
-    candidates: list[tuple[int, int, tuple[int, int, int, int], int]] = []
+    # (面積, id, 矩形, pid, ウィンドウ名有無)。候補が複数出る（2冊同時・設定/検索パネル等）
+    # ときは面積最大を本体とみなすが、誤ウィンドウをサイレントに撮り続ける事故を避けるため警告する。
+    candidates: list[tuple[int, int, tuple[int, int, int, int], int, bool]] = []
     for w in wins:
         owner = w.get("kCGWindowOwnerName", "") or ""
         if keyword not in owner or w.get("kCGWindowLayer", 0) != 0:
@@ -203,11 +204,20 @@ def detect_window_id(
             int(b.get("Width", 0)),
             int(b.get("Height", 0)),
         )
+        name = w.get("kCGWindowName", "") or ""
         candidates.append(
-            (rect[2] * rect[3], int(w.get("kCGWindowNumber")), rect, int(w.get("kCGWindowOwnerPID", 0)))
+            (rect[2] * rect[3], int(w.get("kCGWindowNumber")), rect,
+             int(w.get("kCGWindowOwnerPID", 0)), bool(name))
         )
     if not candidates:
         raise RuntimeError(f"Kindle ウィンドウが見つかりません（app_name={app_name!r}）")
+    # Kindle は本文ウィンドウとは別に、名前なしの黒いゴミ窓（500x500 等）や細い帯を裏で作る。
+    # 本文ウィンドウだけが非空のウィンドウ名を持つため、名前ありが1つでもあれば名前なしを除外する。
+    # これで「面積最大がゴミ窓を掴んで黒画面」になる事故を config/calibrate なしに防ぐ。
+    # 全て名前なし（画面収録権限が未付与等）の場合のみ、従来の全候補・面積最大にフォールバックする。
+    named = [c for c in candidates if c[4]]
+    if named:
+        candidates = named
     candidates.sort(key=lambda c: c[0], reverse=True)
     if len(candidates) > 1:
         logger.warning(
