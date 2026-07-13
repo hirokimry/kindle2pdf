@@ -47,6 +47,9 @@ _CLICLICK_KEY = {"right": "arrow-right", "left": "arrow-left"}
 _MAX_BLACK_RETRIES = 10
 # 1フレーム確定までに許す総撮影回数（描画が安定しない場合の暴走防止）。
 _MAX_STABLE_ATTEMPTS = 30
+# max_pages=0（上限なし）時の暴走防止用の高い安全弁。実運用のどんな長編も超えない値に取り、
+# pHash 終端検出が万一効かなくても無限ループしないための最後の砦（#45）。
+SAFETY_MAX_PAGES = 100000
 
 
 def run_calibrate(cfg: Config, work_dir: Path) -> tuple[Path, tuple[int, int, int, int]]:
@@ -480,10 +483,14 @@ def run_capture(
     # レジューム: 既存 state から直前確定フレーム・連続一致数を引き継ぐ。
     prev_hash = imaging.hex_to_hash(state.last_hash) if state.last_hash else None
     repeat = state.repeat_count
-    logger.info("撮影開始: %d ページ目から（上限 %d）", state.captured + 1, cap.max_pages)
+    # max_pages=0 は「上限なし」。撮影は pHash 終端検出で止まるのが実質の停止機構で、
+    # ここでは終端検出が万一効かないときの暴走防止として高い安全弁だけを課す（#45）。
+    page_limit = cap.max_pages if cap.max_pages > 0 else SAFETY_MAX_PAGES
+    limit_label = cap.max_pages if cap.max_pages > 0 else "なし（安全弁 %d）" % SAFETY_MAX_PAGES
+    logger.info("撮影開始: %d ページ目から（上限 %s）", state.captured + 1, limit_label)
 
     try:
-        while state.captured < cap.max_pages:
+        while state.captured < page_limit:
             # リサイズ/移動に追従してクロップ比率を最新化する（枠の写り込み・余白削りを防ぐ）。
             window_id, bounds, crop_fraction = _auto_region_params(app_name)
             if bounds != last_bounds:

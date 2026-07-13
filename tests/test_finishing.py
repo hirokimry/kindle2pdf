@@ -220,7 +220,7 @@ def test_page_filename_uses_shared_width():
     # 実装と同じフォーマット式で再計算せず、期待値をリテラルで固定する（実装バグを検出できるように）
     assert naming.page_filename(1) == "page_000001.png"
     assert naming.page_filename(42) == "page_000042.png"
-    assert naming.PAGE_NUM_WIDTH >= 6  # max_pages 既定3000（1 撮影 = 1 ページ）を大きく上回る余裕
+    assert naming.PAGE_NUM_WIDTH >= 6  # 上限なし撮影（#45）の大冊でも桁溢れしない 6 桁幅
 
 
 def test_preprocess_emits_padded_page_names(tmp_path):

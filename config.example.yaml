@@ -17,7 +17,7 @@ capture:
   stable_threshold: 2             # 安定確認用のpHash距離（連続フレームの同一判定）
   end_detect_repeats: 3           # 同一ハッシュ連続で終了
   same_threshold: 2               # 前ページとの重複判定用のpHash距離（サムネ除去前提）
-  max_pages: 3000                 # 安全上限
+  max_pages: 0                    # 0=上限なし（最終ページ自動検出で停止）。正=安全上限
   prevent_sleep: true             # caffeinate 併用
 
 preprocess:

@@ -153,6 +153,31 @@ def test_sequential_save_no_gaps(monkeypatch, tmp_path):
     assert not (raw / ".pending.png").exists()
 
 
+def test_max_pages_zero_captures_until_end(monkeypatch, tmp_path):
+    """max_pages=0（上限なし）は 0 枚で止まらず、最終ページ自動検出まで撮る（#45）。"""
+    fake = FakeScreen(
+        [(HASH_A, 255), (HASH_B, 255), (HASH_C, 255), (HASH_C, 255), (HASH_C, 255), (HASH_C, 255)]
+    )
+    _install(monkeypatch, fake)
+    # 安全弁を小さくしても、pHash 終端検出が先に効いて 3 ページで止まることを確認する。
+    monkeypatch.setattr(capture, "SAFETY_MAX_PAGES", 1000)
+    state = State()
+    capture.run_capture(_make_cfg(max_pages=0), state, tmp_path, tmp_path / "state.json")
+
+    assert state.captured == 3  # 0 枚ではなく、本の最後まで撮れる
+
+
+def test_max_pages_positive_caps_capture(monkeypatch, tmp_path):
+    """正の max_pages は従来どおり上限として効く（#45・後方互換）。"""
+    # 終端検出されない別々のフレームを与え、max_pages=2 で頭打ちになることを確認する。
+    fake = FakeScreen([(HASH_A, 255), (HASH_B, 255), (HASH_C, 255), (HASH_A, 255)])
+    _install(monkeypatch, fake)
+    state = State()
+    capture.run_capture(_make_cfg(max_pages=2), state, tmp_path, tmp_path / "state.json")
+
+    assert state.captured == 2  # 上限で停止
+
+
 def test_end_detection_does_not_save_duplicates(monkeypatch, tmp_path):
     fake = FakeScreen([(HASH_A, 255), (HASH_A, 255), (HASH_A, 255), (HASH_A, 255)])
     _install(monkeypatch, fake)

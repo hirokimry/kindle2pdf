@@ -26,7 +26,9 @@ class CaptureConfig:
     stable_threshold: int = 2        # 安定確認用のpHash距離（同一フレーム判定）
     end_detect_repeats: int = 3
     same_threshold: int = 2
-    max_pages: int = 3000
+    # 撮影の最大ページ数。0 = 上限なし（最終ページの自動検出で止まる）。撮影は pHash 終端
+    # 検出が実質の停止機構で、正の値は安全上限として効く（capture 側に高い内部安全弁あり）。
+    max_pages: int = 0
     prevent_sleep: bool = True
 
 
@@ -143,3 +145,6 @@ class Config:
         # JPEG 品質は 1〜100（Pillow の許容範囲）。PNG は可逆なので品質検証を課さない。
         if fmt in ("jpeg", "jpg") and not 1 <= self.build.jpeg_quality <= 100:
             raise ValueError("build.jpeg_quality は 1〜100 の範囲で指定してください。")
+        # max_pages は 0=上限なし / 正=安全上限。負値は意味を持たないため弾く。
+        if self.capture.max_pages < 0:
+            raise ValueError("capture.max_pages は 0（上限なし）以上で指定してください。")
