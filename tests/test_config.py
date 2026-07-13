@@ -56,6 +56,26 @@ def test_validate_accepts_ltr_reading_order():
     cfg.validate()  # 例外が出なければ OK
 
 
+def test_ocr_engine_default_is_apple():
+    """ocr.engine の既定は apple（既存利用者の挙動を変えない・Issue #56）。"""
+    assert Config().ocr.engine == "apple"
+
+
+def test_validate_accepts_google_engine():
+    """ocr.engine=google は受理される（鍵不在チェックは OCR 段で行う）。"""
+    cfg = Config()
+    cfg.ocr.engine = "google"
+    cfg.validate()  # 例外が出なければ OK
+
+
+def test_validate_rejects_unknown_engine():
+    """ocr.engine が apple / google 以外なら明確なエラーで弾く。"""
+    cfg = Config()
+    cfg.ocr.engine = "tesseract"
+    with pytest.raises(ValueError, match="ocr.engine"):
+        cfg.validate()
+
+
 def test_load_ignores_retired_region_keys(tmp_path):
     """廃止された静的 region フォールバックのキー（region / auto_region）は無視して読み込む（Issue #47）。
 
