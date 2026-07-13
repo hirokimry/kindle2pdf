@@ -88,6 +88,29 @@ def test_validate_accepts_safe_book_title():
     cfg.validate()  # 例外が出なければ OK
 
 
+def test_max_pages_default_is_unlimited():
+    """max_pages の既定は 0（上限なし）になった（#45）。"""
+    assert Config().capture.max_pages == 0
+
+
+@pytest.mark.parametrize("value", [0, 1, 3000])
+def test_validate_accepts_nonnegative_max_pages(value):
+    """0（上限なし）と正の安全上限は通る（#45）。"""
+    cfg = Config()
+    cfg.capture.auto_region = True
+    cfg.capture.max_pages = value
+    cfg.validate()  # 例外が出なければ OK
+
+
+def test_validate_rejects_negative_max_pages():
+    """負の max_pages は明確なエラーで弾く（#45）。"""
+    cfg = Config()
+    cfg.capture.auto_region = True
+    cfg.capture.max_pages = -1
+    with pytest.raises(ValueError):
+        cfg.validate()
+
+
 def test_state_roundtrip(tmp_path):
     st = State(book_title="b", stage="ocr", captured=42, ocr_done=30)
     p = tmp_path / "state.json"
