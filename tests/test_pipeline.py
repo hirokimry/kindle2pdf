@@ -48,10 +48,9 @@ def _make_raw_image(path: Path) -> None:
 
 
 def _single_page_config(tmp_path: Path) -> Config:
-    """1生画像→1ページになる Config（region は検証を通す固定値）。"""
+    """1生画像→1ページになる Config。"""
     cfg = Config()
     cfg.book_title = "test-book"
-    cfg.capture.region = [0, 0, IMG_W, IMG_H]
     cfg.preprocess.trim = {}                   # トリミング無効（黒矩形位置を保つ）
     cfg.preprocess.min_brightness = 0          # 合成画像を黒画面誤判定しない
     return cfg

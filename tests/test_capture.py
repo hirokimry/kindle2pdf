@@ -25,8 +25,6 @@ HASH_D = "ff00ff00ff00ff00"
 def _make_cfg(**cap_over) -> Config:
     """テスト用 Config（待機0秒・安定確認1回）。"""
     defaults = dict(
-        region=[0, 0, 10, 10],
-        auto_region=False,  # テストは静的 region + FakeScreen で撮影経路を検証する
         app_name="Kindle",  # 明示指定で resolve_app_name を短絡（実 osascript を呼ばない・CI 安全）
         stable_required=1,
         end_detect_repeats=3,
@@ -56,7 +54,7 @@ class FakeScreen:
         self.current = None
         self.turns = 0
 
-    def grab(self, region, out_path, window_id=None):
+    def grab(self, out_path, window_id):
         if self.cycle:
             idx = self.gi % len(self.frames)
         else:
@@ -77,6 +75,11 @@ class FakeScreen:
 
 
 def _install(monkeypatch, fake: FakeScreen):
+    # auto_region の実測（Quartz/AX）を避け、window_id とクロップ比率を固定注入する。
+    # crop_fraction=0.0 なら crop_top_fraction を呼ばず、FakeScreen の擬似 png を PIL で開かない。
+    monkeypatch.setattr(
+        capture, "_auto_region_params", lambda app_name: (1, (0, 0, 100, 100), 0.0)
+    )
     monkeypatch.setattr(capture, "grab", fake.grab)
     monkeypatch.setattr(capture, "turn_page", fake.turn_page)
     monkeypatch.setattr(imaging, "mean_brightness", fake.mean_brightness)
@@ -271,10 +274,13 @@ def test_pending_temp_is_not_dotfile_and_outside_raw(monkeypatch, tmp_path):
     seen = []
     fake = FakeScreen([(HASH_A, 200), (HASH_A, 200), (HASH_A, 200)])
 
-    def rec_grab(region, out_path, window_id=None):
+    def rec_grab(out_path, window_id):
         seen.append(Path(out_path))
-        return fake.grab(region, out_path, window_id)
+        return fake.grab(out_path, window_id)
 
+    monkeypatch.setattr(
+        capture, "_auto_region_params", lambda app_name: (1, (0, 0, 100, 100), 0.0)
+    )
     monkeypatch.setattr(capture, "grab", rec_grab)
     monkeypatch.setattr(capture, "turn_page", fake.turn_page)
     monkeypatch.setattr(imaging, "mean_brightness", fake.mean_brightness)
@@ -287,27 +293,7 @@ def test_pending_temp_is_not_dotfile_and_outside_raw(monkeypatch, tmp_path):
         assert p.parent != raw_dir, f"pending が raw/ 内にある: {p}"
 
 
-def test_run_calibrate_activates_kindle_before_grab(monkeypatch, tmp_path):
-    """calibrate は撮影前に Kindle を app_name で前面化する（ターミナル誤撮影の防止）。"""
-    order = []
-    monkeypatch.setattr(
-        capture,
-        "activate_kindle",
-        lambda app_name="Kindle": order.append(("activate", app_name)),
-    )
-
-    def rec_grab(region, out_path, window_id=None):
-        order.append(("grab", str(out_path)))
-        Path(out_path).write_bytes(b"x")
-        return str(out_path)
-
-    monkeypatch.setattr(capture, "grab", rec_grab)
-    capture.run_calibrate(_make_cfg(region=[0, 0, 10, 10], app_name="Amazon Kindle"), tmp_path)
-    assert [o[0] for o in order] == ["activate", "grab"]
-    assert order[0][1] == "Amazon Kindle"
-
-
-# --- ウィンドウ自動検出（auto_region: -l ウィンドウID撮影）---
+# --- ウィンドウ自動検出（-l ウィンドウID撮影）---
 
 
 class _FakeQuartz:
@@ -381,10 +367,10 @@ def _one_kindle_window(number=900, pid=42, bounds=(0, 37, 1470, 919)):
 
 
 def test_run_capture_auto_region_wires_window_id_and_crop(monkeypatch, tmp_path):
-    """auto_region=True（既定経路）で window_id と crop 比率が grab / crop まで配線される。"""
+    """window_id と crop 比率が grab / crop まで配線される。"""
     grabbed, cropped = [], []
 
-    def rec_grab(region, out_path, window_id=None):
+    def rec_grab(out_path, window_id):
         grabbed.append(window_id)
         Path(out_path).write_bytes(b"x")
         return str(out_path)
@@ -398,7 +384,7 @@ def test_run_capture_auto_region_wires_window_id_and_crop(monkeypatch, tmp_path)
     monkeypatch.setattr(capture, "turn_page", lambda cfg, app_name=None: None)
 
     capture.run_capture(
-        _make_cfg(auto_region=True, app_name="Amazon Kindle"),
+        _make_cfg(app_name="Amazon Kindle"),
         State(), tmp_path, tmp_path / "state.json",
     )
     # 検出した window_id で全フレーム撮影し、毎フレーム 28/919 の比率でクロップした。
@@ -422,17 +408,17 @@ def test_run_capture_auto_region_refollows_resize(monkeypatch, tmp_path):
     monkeypatch.setattr(imaging, "phash", fake.phash)
     monkeypatch.setattr(imaging, "crop_top_fraction", lambda p, f: cropped.append(f))
 
-    capture.run_capture(_make_cfg(auto_region=True), State(), tmp_path, tmp_path / "s.json")
+    capture.run_capture(_make_cfg(), State(), tmp_path, tmp_path / "s.json")
 
     # リサイズ後の比率0.05が実際にクロップに使われている（古い0.03に固定されていない）。
     assert 0.05 in cropped
 
 
 def test_run_calibrate_auto_returns_crop_adjusted_region(monkeypatch, tmp_path):
-    """auto_region の calibrate は window_id で撮り、返す region をクロップ後に補正する。"""
+    """calibrate は window_id で撮り、返す region をクロップ後に補正する。"""
     calls = []
 
-    def rec_grab(region, out_path, window_id=None):
+    def rec_grab(out_path, window_id):
         calls.append(window_id)
         Path(out_path).write_bytes(b"x")
         return str(out_path)
@@ -443,7 +429,7 @@ def test_run_calibrate_auto_returns_crop_adjusted_region(monkeypatch, tmp_path):
     monkeypatch.setattr(imaging, "crop_top_fraction", lambda p, f: None)
 
     out_path, region = capture.run_calibrate(
-        _make_cfg(auto_region=True, app_name="Amazon Kindle"), tmp_path
+        _make_cfg(app_name="Amazon Kindle"), tmp_path
     )
     assert calls == [900]                          # window_id で直接撮った
     assert region == (0, 37 + 28, 1470, 919 - 28)  # 上端クロップぶん y を下げ h を縮めた
@@ -459,7 +445,7 @@ def test_grab_uses_window_id_flag(monkeypatch):
         Path(cmd[-1]).write_bytes(b"x")
 
     monkeypatch.setattr(sp, "run", fake_run)
-    capture.grab(None, "/tmp/x.png", window_id=79362)
+    capture.grab("/tmp/x.png", 79362)
     assert "-l" in calls["cmd"] and "79362" in calls["cmd"]
     assert not any(str(c).startswith("-R") for c in calls["cmd"])
 

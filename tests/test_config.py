@@ -44,7 +44,6 @@ def test_load_rejects_retired_split_spread_key(tmp_path):
 def test_validate_rejects_retired_reading_order_value():
     """旧 reading_order 値（split / column）は移行を促す明確なエラーで弾く。"""
     cfg = Config.load(REPO / "config.example.yaml")
-    cfg.capture.auto_region = True  # region 検証を回避して reading_order 検証まで通す
     cfg.ocr.reading_order = "split"
     with pytest.raises(ValueError, match="reading_order"):
         cfg.validate()
@@ -53,30 +52,30 @@ def test_validate_rejects_retired_reading_order_value():
 def test_validate_accepts_ltr_reading_order():
     """reading_order=ltr は横書き見開き向けとして受理される。"""
     cfg = Config.load(REPO / "config.example.yaml")
-    cfg.capture.auto_region = True
     cfg.ocr.reading_order = "ltr"
     cfg.validate()  # 例外が出なければ OK
 
 
-def test_validate_rejects_unmeasured_region():
-    cfg = Config.load(REPO / "config.example.yaml")  # region=[0,0,0,0]
-    cfg.capture.auto_region = False  # 静的 region 運用では未実測を弾く
-    with pytest.raises(ValueError):
-        cfg.validate()
+def test_load_ignores_retired_region_keys(tmp_path):
+    """廃止された静的 region フォールバックのキー（region / auto_region）は無視して読み込む（Issue #47）。
 
-
-def test_validate_skips_region_when_auto():
-    """auto_region 時は静的 region 未実測でも validate が通る（実行時に自動算出）。"""
-    cfg = Config.load(REPO / "config.example.yaml")  # region=[0,0,0,0]
-    cfg.capture.auto_region = True
-    cfg.validate()  # 例外が出なければ OK
+    旧 config.yaml を手書きで残しているユーザーが未知キー TypeError で落ちないことを保証する。
+    """
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(
+        "book_title: x\ncapture:\n"
+        "  auto_region: false\n  region: [1, 2, 300, 400]\n  app_name: \"Kindle\"\n",
+        encoding="utf-8",
+    )
+    cfg = Config.load(cfg_file)  # TypeError を出さずに読み込めること
+    assert cfg.capture.app_name == "Kindle"  # 廃止キー以外は通常どおり反映される
+    assert not hasattr(cfg.capture, "region")  # 廃止キーはフィールドとして残らない
 
 
 @pytest.mark.parametrize("bad", ["a/b", "..", ".", "\\x", "", "../escape", "sub/dir"])
 def test_validate_rejects_unsafe_book_title(bad):
     """book_title のパス区切り・相対参照・空文字を弾く（work/ 外エスケープ防止・#32）。"""
     cfg = Config()
-    cfg.capture.auto_region = True  # region 検証を飛ばして book_title 検証を切り分ける
     cfg.book_title = bad
     with pytest.raises(ValueError):
         cfg.validate()
@@ -85,7 +84,6 @@ def test_validate_rejects_unsafe_book_title(bad):
 def test_validate_accepts_safe_book_title():
     """区切り文字を含まない通常の書名は通る。"""
     cfg = Config()
-    cfg.capture.auto_region = True
     cfg.book_title = "吾輩は猫である_上巻"
     cfg.validate()  # 例外が出なければ OK
 

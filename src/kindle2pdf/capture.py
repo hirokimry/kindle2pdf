@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 
 from . import imaging, naming, progress
-from .config import Config, validate_region
+from .config import Config
 from .state import State
 
 # 未指定時に順に試す Kindle アプリ名。新しめの Mac 版は "Amazon Kindle"、旧版は "Kindle"。
@@ -52,14 +52,10 @@ _MAX_STABLE_ATTEMPTS = 30
 def run_calibrate(cfg: Config, work_dir: Path) -> tuple[Path, tuple[int, int, int, int]]:
     """region を 1 枚だけ撮影し、(保存先パス, 正規化済み region) を返す。[P1]
 
-    2 経路があり、返す region は「実際に撮影に使った領域」に揃えて表示の齟齬を防ぐ。
-
-    - auto_region=True（既定）: ウィンドウを自動検出し `-l` で撮り、AX 実測のタイトルバー帯を
-      上端クロップする。返す region はクロップ後の実撮影領域。Quartz/AX が使えない・Kindle
-      未起動・アクセシビリティ権限未付与・ウィンドウ/信号機ボタン不検出・帯高が異常値のときは
-      RuntimeError を送出する（誤クロップより明確なエラーで止める）。
-    - auto_region=False: Kindle を前面化し静的 region を撮る。未設定・不正な region は
-      validate_region が明確な ValueError で弾く。
+    ウィンドウを自動検出し `-l` で撮り、AX 実測のタイトルバー帯を上端クロップする。
+    返す region はクロップ後の実撮影領域に揃え、表示の齟齬を防ぐ。Quartz/AX が使えない・
+    Kindle 未起動・アクセシビリティ権限未付与・ウィンドウ/信号機ボタン不検出・帯高が異常値の
+    ときは RuntimeError を送出する（誤クロップより明確なエラーで止める）。
 
     撮影後の画像を開けば UI・柱・余白が入らず本文だけが写るかを目視確認できる。
     """
@@ -67,35 +63,21 @@ def run_calibrate(cfg: Config, work_dir: Path) -> tuple[Path, tuple[int, int, in
     out_path = work_dir / "calibrate.png"
     # 未指定なら候補試行で app_name を自動決定する（明示指定はそのまま優先）（#33）。
     app_name = resolve_app_name(cfg.capture.app_name)
-    if cfg.capture.auto_region:
-        # ウィンドウ ID を検出し `-l` で直接撮る（前面化不要・別 Space 可）。撮影像に含まれる
-        # タイトルバー帯だけを AX 実測の高さで上端クロップし、本文余白は残す。
-        window_id, region, pid = detect_window_id(app_name)
-        grab(None, out_path, window_id=window_id)
-        titlebar_pt = detect_titlebar_pt(pid, region)
-        win_h = region[3]
-        if win_h:
-            imaging.crop_top_fraction(out_path, titlebar_pt / win_h)
-            # 返す region は保存画像と一致させる（上端クロップぶん y を下げ h を縮める）。
-            # calibrate は「実際に撮影に使った領域」を数値表示するため、クロップ前の
-            # ウィンドウ矩形をそのまま返すと表示高さが実画像より大きくなり誤解を招く。
-            x, y, w, h = region
-            cut = round(titlebar_pt)
-            region = (x, y + cut, w, h - cut)
-    else:
-        # 静的 region 運用: Kindle を前面化してから領域を撮る（未実測は ValueError で弾く）。
-        activate_kindle(app_name)
-        time.sleep(cfg.capture.page_turn_wait)
-        region = validate_region(cfg.capture.region)
-        grab(list(region), out_path)
+    # ウィンドウ ID を検出し `-l` で直接撮る（前面化不要・別 Space 可）。撮影像に含まれる
+    # タイトルバー帯だけを AX 実測の高さで上端クロップし、本文余白は残す。
+    window_id, region, pid = detect_window_id(app_name)
+    grab(out_path, window_id)
+    titlebar_pt = detect_titlebar_pt(pid, region)
+    win_h = region[3]
+    if win_h:
+        imaging.crop_top_fraction(out_path, titlebar_pt / win_h)
+        # 返す region は保存画像と一致させる（上端クロップぶん y を下げ h を縮める）。
+        # calibrate は「実際に撮影に使った領域」を数値表示するため、クロップ前の
+        # ウィンドウ矩形をそのまま返すと表示高さが実画像より大きくなり誤解を招く。
+        x, y, w, h = region
+        cut = round(titlebar_pt)
+        region = (x, y + cut, w, h - cut)
     return out_path, region
-
-
-def activate_kindle(app_name: str = "Kindle") -> None:
-    """Kindleを前面化する。app_name は環境により "Amazon Kindle" 等。"""
-    subprocess.run(
-        ["osascript", "-e", f'tell application "{app_name}" to activate'], check=False
-    )
 
 
 def _app_name_cache_path() -> Path:
@@ -383,21 +365,14 @@ def turn_page(cfg: Config, app_name: str | None = None) -> None:
         )
 
 
-def grab(
-    region: list[int] | None, out_path: str | Path, window_id: int | None = None
-) -> str:
-    """ウィンドウ(window_id) or 領域(region)をサムネイルを出さずに撮影する。
+def grab(out_path: str | Path, window_id: int) -> str:
+    """Kindle ウィンドウ(window_id)をサムネイルを出さずに撮影する。
 
-    - window_id 指定時: `screencapture -x -o -l <id>`。ウィンドウを直接撮る（前面化不要・
-      別 Space 可・タイトルバー無し・中身をそのまま=余白を削らない）。auto_region の既定。
-    - region 指定時: `screencapture -x -R{x},{y},{w},{h}`（静的 region 運用）。
-    -x でシャッター音・フローティングサムネイルを抑止（PoC 7.2 の必須条件）、-o で影を除く。
+    `screencapture -x -o -l <id>` でウィンドウを直接撮る（前面化不要・別 Space 可・
+    タイトルバー無し・中身をそのまま=余白を削らない）。-x でシャッター音・フローティング
+    サムネイルを抑止（PoC 7.2 の必須条件）、-o で影を除く。
     """
-    if window_id is not None:
-        cmd = ["screencapture", "-x", "-o", "-l", str(window_id), str(out_path)]
-    else:
-        x, y, w, h = region
-        cmd = ["screencapture", "-x", f"-R{x},{y},{w},{h}", str(out_path)]
+    cmd = ["screencapture", "-x", "-o", "-l", str(window_id), str(out_path)]
     subprocess.run(cmd, check=True)
     return str(out_path)
 
@@ -405,7 +380,7 @@ def grab(
 def _grab_confirmed(
     cfg: Config,
     tmp_path: Path,
-    window_id: int | None = None,
+    window_id: int,
     crop_fraction: float = 0.0,
 ) -> imaging.imagehash.ImageHash:
     """安定した1フレームを撮り、その pHash を返す。
@@ -432,7 +407,7 @@ def _grab_confirmed(
                 "撮影フレームが安定しませんでした（page_turn_wait / stable_wait を見直してください）。"
             )
         attempts += 1
-        grab(cap.region, tmp_path, window_id)
+        grab(tmp_path, window_id)
         if crop_fraction:
             imaging.crop_top_fraction(tmp_path, crop_fraction)
 
@@ -440,7 +415,7 @@ def _grab_confirmed(
             # 黒画面のリトライ回数が上限（_MAX_BLACK_RETRIES）に達したら諦める。
             if black_retries >= _MAX_BLACK_RETRIES:
                 raise RuntimeError(
-                    "黒画面が継続しました（Kindle表示・撮影領域 region を確認してください）。"
+                    "黒画面が継続しました（Kindle 表示・ウィンドウ検出を確認してください）。"
                 )
             black_retries += 1
             # 黒画面は安定判定をリセットして撮り直す。
@@ -475,23 +450,18 @@ def run_capture(
     cap = cfg.capture
     raw_dir = Path(work_dir) / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
-    # auto_region: 実行時に Kindle ウィンドウを検出し `-l` で直接撮る。ウィンドウは移動・別
-    # Space 化・リサイズし得るため **ページごとに再検出** し、クロップ比率(帯高÷ウィンドウ高)を
-    # 毎回最新化する。セッション中に一度だけ算出して使い回すと、リサイズ時に比率がずれて
-    # 枠が写る／余白を削る事故になるため（帯高は pt 不変でも比率は高さに依存する）。
-    window_id = None
-    crop_fraction = 0.0
-    last_bounds = None
-    # ページ送りの前面化にもウィンドウ検出にも app_name が要るため、auto_region の有無に
-    # よらず先に確定する（未指定なら候補を AppleScript 検証で自動決定・#33）。静的 region
-    # 運用でも turn_page の activate に空文字を渡さないためここで必須。
+    # 実行時に Kindle ウィンドウを検出し `-l` で直接撮る。ウィンドウは移動・別 Space 化・
+    # リサイズし得るため **ページごとに再検出** し、クロップ比率(帯高÷ウィンドウ高)を毎回
+    # 最新化する。セッション中に一度だけ算出して使い回すと、リサイズ時に比率がずれて枠が
+    # 写る／余白を削る事故になるため（帯高は pt 不変でも比率は高さに依存する）。
+    # app_name はウィンドウ検出にもページ送りの activate にも要る（未指定なら候補を
+    # AppleScript 検証で自動決定・#33）。
     app_name = resolve_app_name(cap.app_name)
-    if cap.auto_region:
-        window_id, last_bounds, crop_fraction = _auto_region_params(app_name)
-        logger.info(
-            "ウィンドウ自動検出: id=%s 矩形=%s（上端タイトルバーのみクロップ・本文余白は保全）",
-            window_id, last_bounds,
-        )
+    window_id, last_bounds, crop_fraction = _auto_region_params(app_name)
+    logger.info(
+        "ウィンドウ自動検出: id=%s 矩形=%s（上端タイトルバーのみクロップ・本文余白は保全）",
+        window_id, last_bounds,
+    )
     # 一時ファイルは raw/ の外（work_dir 直下）かつ非ドットファイルにする。
     # macOS の screencapture はドットファイル（.pending.png）に書けず、
     # raw/*.png を glob する preprocess に temp を拾わせないため raw/ の外に置く。
@@ -504,14 +474,13 @@ def run_capture(
 
     try:
         while state.captured < cap.max_pages:
-            if cap.auto_region:
-                # リサイズ/移動に追従してクロップ比率を最新化する（枠の写り込み・余白削りを防ぐ）。
-                window_id, bounds, crop_fraction = _auto_region_params(app_name)
-                if bounds != last_bounds:
-                    logger.info(
-                        "ウィンドウ変化を検出: 矩形=%s に追従しクロップ比率を再算出しました", bounds
-                    )
-                    last_bounds = bounds
+            # リサイズ/移動に追従してクロップ比率を最新化する（枠の写り込み・余白削りを防ぐ）。
+            window_id, bounds, crop_fraction = _auto_region_params(app_name)
+            if bounds != last_bounds:
+                logger.info(
+                    "ウィンドウ変化を検出: 矩形=%s に追従しクロップ比率を再算出しました", bounds
+                )
+                last_bounds = bounds
             h = _grab_confirmed(cfg, pending, window_id, crop_fraction)
 
             if prev_hash is not None and imaging.is_same(h, prev_hash, cap.same_threshold):

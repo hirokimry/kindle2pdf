@@ -20,7 +20,7 @@ from kindle2pdf.cli import main
 def _write_config(tmp_path: Path, extra: str = "") -> None:
     (tmp_path / "config.yaml").write_text(
         "book_title: base-title\ncapture:\n"
-        '  app_name: "Kindle"\n  auto_region: false\n  region: [0, 0, 400, 560]\n'
+        '  app_name: "Kindle"\n'
         + extra,
         encoding="utf-8",
     )
@@ -161,7 +161,7 @@ def test_calibrate_rejects_unsafe_book_title(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "config.yaml").write_text(
         "book_title: ../escape\ncapture:\n"
-        '  app_name: "Kindle"\n  auto_region: false\n  region: [0, 0, 400, 560]\n',
+        '  app_name: "Kindle"\n',
         encoding="utf-8",
     )
     from kindle2pdf import capture as capture_mod

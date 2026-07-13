@@ -21,10 +21,10 @@ from .state import State
 def _friendly_errors():
     """ドメイン例外を CLI の明確なエラー（exit 1 + メッセージ）に変換する。
 
-    Why: auto_region 経路は Kindle 未起動・アクセシビリティ権限未付与・ウィンドウ不検出
+    Why: ウィンドウ自動検出は Kindle 未起動・アクセシビリティ権限未付与・ウィンドウ不検出
     などを RuntimeError で送出する（初回実行で最も起きやすい失敗）。生の traceback ではなく
     click のエラーメッセージで返し、「誤クロップより明確なエラーで止める」設計を CLI 層でも守る。
-    region 未設定などの ValueError も同様に扱う。
+    config 廃止キーなどの ValueError も同様に扱う。
     """
     try:
         yield
@@ -70,13 +70,13 @@ def _open_file(path: str) -> None:
 @main.command()
 @click.option("--config", default="config.yaml", show_default=True)
 def calibrate(config: str) -> None:
-    """撮影領域 region を実測するための補助（1枚撮って枠を確認）。[P1]"""
+    """撮影領域を確認するための補助（1枚撮って枠を確認）。[P1]"""
     from . import capture as capture_mod
     from .pipeline import book_dir
 
     with _friendly_errors():
-        # config 読込(廃止キー等の ValueError)・region 未設定・auto_region の検出失敗
-        # (RuntimeError)を、全て明確なエラーで返す（生 traceback にしない）。
+        # config 読込(廃止キー等の ValueError)・ウィンドウ自動検出の失敗(RuntimeError)を、
+        # 全て明確なエラーで返す（生 traceback にしない）。
         cfg = _load(config)
         # book_dir(cfg) は work/<book_title>/ を作る。book_title に / .. が混ざると work/ の
         # 外へ書き込みうるため、run/capture と同じく撮影前に validate で弾く（#32）。

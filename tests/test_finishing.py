@@ -162,7 +162,6 @@ def test_pipeline_logs_stage_banners(tmp_path, monkeypatch, caplog):
     monkeypatch.chdir(tmp_path)
     cfg = Config()
     cfg.book_title = "banner-book"
-    cfg.capture.region = [0, 0, IMG_W, IMG_H]
     cfg.preprocess.trim = {}
     cfg.preprocess.min_brightness = 0
 
@@ -191,7 +190,6 @@ def test_pipeline_logs_stage_banners(tmp_path, monkeypatch, caplog):
 def test_invalid_image_format_rejected():
     """image_format が jpeg/png 以外は validate で弾く。"""
     cfg = Config()
-    cfg.capture.region = [0, 0, 100, 100]
     cfg.build.image_format = "gif"
     with pytest.raises(ValueError):
         cfg.validate()
@@ -200,7 +198,6 @@ def test_invalid_image_format_rejected():
 def test_invalid_jpeg_quality_rejected():
     """jpeg_quality が 1〜100 外は validate で弾く。"""
     cfg = Config()
-    cfg.capture.region = [0, 0, 100, 100]
     cfg.build.jpeg_quality = 0
     with pytest.raises(ValueError):
         cfg.validate()
@@ -245,7 +242,6 @@ def test_preprocess_emits_padded_page_names(tmp_path):
 def test_png_format_skips_jpeg_quality_check():
     """png 指定時は jpeg_quality の範囲検証を課さない（可逆なので無関係）。"""
     cfg = Config()
-    cfg.capture.region = [0, 0, 100, 100]
     cfg.build.image_format = "png"
     cfg.build.jpeg_quality = 0  # png では無視される
     cfg.validate()  # 例外が出なければ OK
