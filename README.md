@@ -125,7 +125,8 @@ macOS 標準 Python はコンパイラ非搭載でビルドに失敗するため
 brew install python@3.12
 /opt/homebrew/bin/python3.12 -m venv .venv
 source .venv/bin/activate
-pip install -e ".[macos,dev]"   # ocrmac は macos extra。非macは省略
+# ocrmac は macos extra。非macは省略
+pip install -e ".[macos,dev]"
 ```
 
 ### ⚙️ 無対話フル制御（上級者・CI）
@@ -133,9 +134,12 @@ pip install -e ".[macos,dev]"   # ocrmac は macos extra。非macは省略
 ウィザードを介さず、`config.yaml` でフル制御できる（二段構え）。
 
 ```bash
-cp config.example.yaml config.yaml               # 設定を用意
-python -m kindle2pdf calibrate --config config.yaml   # 撮影領域 region を実測
-python -m kindle2pdf run --config config.yaml         # capture→preprocess→ocr→build 全自動
+# 設定を用意
+cp config.example.yaml config.yaml
+# 撮影領域 region を実測
+python -m kindle2pdf calibrate --config config.yaml
+# capture→preprocess→ocr→build 全自動
+python -m kindle2pdf run --config config.yaml
 # 中断後も同じコマンドでレジューム
 ```
 
@@ -144,8 +148,10 @@ python -m kindle2pdf run --config config.yaml         # capture→preprocess→o
 ### 🖥️ Node フロントの開発
 
 ```bash
-node cli/index.mjs           # ウィザードをローカル起動（bin: kindle2pdf）
-node --test cli/test/*.test.mjs   # フロントの単体テスト
+# ウィザードをローカル起動（bin: kindle2pdf）
+node cli/index.mjs
+# フロントの単体テスト
+node --test cli/test/*.test.mjs
 ```
 
 ---
