@@ -3,12 +3,21 @@
 // 必ずモジュール形式（-m kindle2pdf）で呼ぶ（Issue #34）。spawn は差し替え可能でテストする。
 
 import { spawn as nodeSpawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 
 import { parseProgressLine } from "./progress.mjs";
 
-// 使う Python を決める。環境変数で明示できる（venv の python 等）。既定は python3。
-export function resolvePython() {
-  return process.env.KINDLE2PDF_PYTHON || "python3";
+// 使う Python を決める。解決順は KINDLE2PDF_PYTHON（明示指定）> プロジェクト直下の .venv >
+// python3（フォールバック）。.venv を自動検出することで、venv を有効化しなくても
+// `npx kindle2pdf` 単体でコアが起動する（README「実行のたびの仮想環境の有効化も不要」を満たす・#51）。
+// 探索は cwd 直下の .venv 1 点のみ（上位ディレクトリへは遡らない＝検出パスを信頼境界内に固定）。
+// cwd はテスト用の注入口。
+export function resolvePython(cwd = process.cwd()) {
+  if (process.env.KINDLE2PDF_PYTHON) return process.env.KINDLE2PDF_PYTHON;
+  const venvPython = join(cwd, ".venv", "bin", "python3");
+  if (existsSync(venvPython)) return venvPython;
+  return "python3";
 }
 
 // コアを起動し、進捗イベントを onEvent(ev) に、生ログ（stderr）を onStderr(text) に渡す。
